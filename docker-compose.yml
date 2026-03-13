@@ -39,6 +39,7 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
       - local_media:/media # For local media ingestion if needed
+      - ./google_service_account.json:/home/node/google_service_account.json:ro
     depends_on:
       postgres:
         condition: service_healthy
