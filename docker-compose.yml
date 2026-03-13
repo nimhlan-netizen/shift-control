@@ -36,10 +36,10 @@ services:
       - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-admin}
       - WEBHOOK_URL=http://${DOMAIN_NAME:-localhost}:5678/
       - GENERIC_TIMEZONE=${TIMEZONE:-UTC}
+      - GOOGLE_SERVICE_ACCOUNT_JSON=${GOOGLE_SERVICE_ACCOUNT_JSON}
     volumes:
       - n8n_data:/home/node/.n8n
       - local_media:/media # For local media ingestion if needed
-      - ./google_service_account.json:/home/node/google_service_account.json:ro
     depends_on:
       postgres:
         condition: service_healthy
