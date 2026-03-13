@@ -1,0 +1,192 @@
+{
+  "name": "Orchestrator Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-node-1",
+      "name": "Chat Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "shift-control-chat-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"anthropic/claude-3.5-sonnet\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are the Orchestrator Agent for Shift Control. Classify the user's intent into one of three categories: 'shopify', 'social', or 'general'. Respond ONLY with a JSON object in this exact format: { \\\"intent\\\": \\\"<category>\\\", \\\"extracted_data\\\": \\\"<any specific details>\\\", \\\"response_message\\\": \\\"<A friendly message acknowledging the task>\\\" }\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"{{ $json.body.message }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "openrouter-llm-node",
+      "name": "OpenRouter LLM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "OpenRouter API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ JSON.parse($json.choices[0].message.content).intent }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "shopify",
+              "output": 0
+            },
+            {
+              "value2": "social",
+              "output": 1
+            },
+            {
+              "value2": "general",
+              "output": 2
+            }
+          ]
+        }
+      },
+      "id": "intent-router",
+      "name": "Route by Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "output",
+              "value": "={{ JSON.parse($('OpenRouter LLM').item.choices[0].message.content).response_message }}"
+            },
+            {
+              "name": "agent",
+              "value": "Shopify Manager"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-shopify-response",
+      "name": "Format Shopify Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [900, 150]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "output",
+              "value": "={{ JSON.parse($('OpenRouter LLM').item.choices[0].message.content).response_message }}"
+            },
+            {
+              "name": "agent",
+              "value": "Social Publisher"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-social-response",
+      "name": "Format Social Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "output",
+              "value": "={{ JSON.parse($('OpenRouter LLM').item.choices[0].message.content).response_message }}"
+            },
+            {
+              "name": "agent",
+              "value": "Orchestrator"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-general-response",
+      "name": "Format General Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [900, 450]
+    }
+  ],
+  "connections": {
+    "Chat Webhook": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter LLM": {
+      "main": [
+        [
+          {
+            "node": "Route by Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Intent": {
+      "main": [
+        [
+          {
+            "node": "Format Shopify Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Social Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format General Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1"
+}

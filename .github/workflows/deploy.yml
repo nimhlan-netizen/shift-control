@@ -1,0 +1,37 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main # Or master, depending on your default branch name
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deploy using SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            # If the directory doesn't exist, this is the first deployment
+            if [ ! -d "/home/${{ secrets.VPS_USERNAME }}/shift-control" ]; then
+              echo "Directory does not exist. Initializing deployment."
+              # You must clone the repo manually the very first time on the VPS 
+              # or use a deploy key. Assuming it's already cloned for subsequent pushes:
+              cd /home/${{ secrets.VPS_USERNAME }}
+              git clone git@github.com:${{ github.repository }}.git shift-control || true
+            fi
+            
+            cd /home/${{ secrets.VPS_USERNAME }}/shift-control
+            
+            # Pull the latest changes from the main branch
+            git fetch origin main
+            git reset --hard origin/main
+            
+            # Deploy using Docker Compose
+            sudo docker compose up -d --build
