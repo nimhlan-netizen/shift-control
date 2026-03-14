@@ -117,6 +117,19 @@ export function ChatArea({
     return () => clearInterval(id);
   }, []);
 
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        handleClearHistory();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Auto-resize textarea to fit content
   useEffect(() => {
     const el = textareaRef.current;
@@ -523,9 +536,18 @@ export function ChatArea({
             </button>
           </div>
         </form>
-        <div className="text-center mt-2 hidden sm:block">
-          <span className="text-[10px] font-mono text-zinc-600">
-            Shift Control v1.0.0 • Connected to n8n workflow engine
+        <div className="flex items-center justify-center gap-4 mt-2 hidden sm:flex">
+          <span className="text-[10px] font-mono text-zinc-700">
+            <kbd className="px-1 py-0.5 rounded bg-zinc-800/60 border border-zinc-700 text-zinc-500">Enter</kbd>
+            {' '}send
+          </span>
+          <span className="text-[10px] font-mono text-zinc-700">
+            <kbd className="px-1 py-0.5 rounded bg-zinc-800/60 border border-zinc-700 text-zinc-500">Shift+Enter</kbd>
+            {' '}newline
+          </span>
+          <span className="text-[10px] font-mono text-zinc-700">
+            <kbd className="px-1 py-0.5 rounded bg-zinc-800/60 border border-zinc-700 text-zinc-500">Ctrl+K</kbd>
+            {' '}clear
           </span>
         </div>
       </div>
