@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, Bot, User, Loader2, Menu, X, Trash2 } from 'lucide-react';
+import { Send, Paperclip, Bot, User, Loader2, Menu, X, Trash2, Copy, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
@@ -74,6 +74,7 @@ export function ChatArea({
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [errorToast, setErrorToast] = useState<{ message: string; retryPayload: { text: string; att: Attachment | null } } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -318,7 +319,7 @@ export function ChatArea({
           <div
             key={msg.id}
             className={cn(
-              "flex gap-3 md:gap-4 max-w-3xl",
+              "flex gap-3 md:gap-4 max-w-3xl group",
               msg.role === 'user' ? "ml-auto flex-row-reverse" : "",
               msg.role === 'system' ? "mx-auto text-center" : ""
             )}
@@ -345,6 +346,21 @@ export function ChatArea({
                   <span className="text-[10px] font-mono text-zinc-600">
                     {format(msg.timestamp, 'HH:mm:ss')}
                   </span>
+                  {msg.role === 'assistant' && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(msg.content);
+                        setCopiedId(msg.id);
+                        setTimeout(() => setCopiedId(null), 2000);
+                      }}
+                      title="Copy message"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-zinc-600 hover:text-zinc-300 rounded"
+                    >
+                      {copiedId === msg.id
+                        ? <Check className="w-3 h-3 text-emerald-400" />
+                        : <Copy className="w-3 h-3" />}
+                    </button>
+                  )}
                 </div>
               )}
 
