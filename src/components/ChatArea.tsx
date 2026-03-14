@@ -77,6 +77,7 @@ export function ChatArea({
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [, setTick] = useState(0);
+  const [pendingAgentName, setPendingAgentName] = useState('Orchestrator');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -252,6 +253,7 @@ export function ChatArea({
           }
         }
 
+        setPendingAgentName(agentName);
         onAgentResponse(agentName);
         onConnectionChange('online');
       } else {
@@ -267,6 +269,7 @@ export function ChatArea({
           agent: agentName,
         }]);
 
+        setPendingAgentName(agentName);
         onAgentResponse(agentName);
         onConnectionChange('online');
       }
@@ -289,6 +292,12 @@ export function ChatArea({
 
     const userText = input.trim();
     const currentAttachment = attachment;
+
+    // Guess agent from input prefix for the header indicator
+    if (userText.startsWith('Shopify:')) setPendingAgentName('Shopify Manager');
+    else if (userText.startsWith('Social:')) setPendingAgentName('Social Publisher');
+    else if (userText.startsWith('Media:')) setPendingAgentName('Media Ingest');
+    else setPendingAgentName('Orchestrator');
 
     setMessages(prev => [...prev, {
       id: Date.now().toString(),
@@ -356,7 +365,15 @@ export function ChatArea({
           >
             <Menu className="w-5 h-5" />
           </button>
-          <h2 className="text-sm font-medium text-zinc-200">Command Center</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-medium text-zinc-200">Command Center</h2>
+            {isTyping && (
+              <span className="flex items-center gap-1.5 text-xs font-mono text-emerald-400 animate-pulse">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                {pendingAgentName} thinking...
+              </span>
+            )}
+          </div>
           <div className="ml-auto flex items-center gap-3">
             <button
               onClick={() => {
