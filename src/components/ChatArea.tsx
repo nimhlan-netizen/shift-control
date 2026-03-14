@@ -11,6 +11,7 @@ interface Message {
   content: string;
   timestamp: Date;
   agent?: string;
+  attachment?: { name: string; type: string; dataUrl: string };
 }
 
 interface Attachment {
@@ -260,8 +261,15 @@ export function ChatArea({
     setMessages(prev => [...prev, {
       id: Date.now().toString(),
       role: 'user',
-      content: userText || `[Attachment: ${currentAttachment?.name}]`,
+      content: userText,
       timestamp: new Date(),
+      ...(currentAttachment && {
+        attachment: {
+          name: currentAttachment.name,
+          type: currentAttachment.type,
+          dataUrl: currentAttachment.dataUrl,
+        }
+      }),
     }]);
     setInput('');
     onMessageSent();
@@ -364,7 +372,23 @@ export function ChatArea({
                 </div>
               )}
 
-              <div className={cn(
+              {msg.attachment && (
+                <div className="mb-1.5 max-w-[260px]">
+                  {msg.attachment.type.startsWith('image/') ? (
+                    <img
+                      src={msg.attachment.dataUrl}
+                      alt={msg.attachment.name}
+                      className="rounded-xl rounded-tr-sm border border-white/10 object-cover max-h-48 w-full"
+                    />
+                  ) : (
+                    <div className="flex items-center gap-2 glass-input px-3 py-2 rounded-xl border border-white/10 text-xs text-zinc-300">
+                      <Paperclip className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <span className="font-mono truncate">{msg.attachment.name}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {(msg.content || msg.role !== 'user') && <div className={cn(
                 "text-sm leading-relaxed break-words w-full shadow-sm transition-all hover:shadow-md",
                 msg.role === 'user' ? "bg-gradient-to-tr from-zinc-800 to-zinc-700/80 text-zinc-100 px-4 py-3 rounded-2xl rounded-tr-sm border border-white/5" :
                 msg.role === 'system' ? "text-xs font-mono text-zinc-500 glass-panel px-3 py-1.5 rounded-full border border-white/5 inline-block" :
@@ -400,7 +424,7 @@ export function ChatArea({
                 ) : (
                   msg.content
                 )}
-              </div>
+              </div>}
             </div>
           </div>
         ))}
