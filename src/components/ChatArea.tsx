@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, Bot, User, Loader2, Menu, X, Trash2, Copy, Check } from 'lucide-react';
+import { Send, Paperclip, Bot, User, Loader2, Menu, X, Trash2, Copy, Check, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format, formatDistanceToNowStrict, differenceInHours } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
@@ -77,6 +77,9 @@ export function ChatArea({
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [, setTick] = useState(0);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [errorToast, setErrorToast] = useState<{ message: string; retryPayload: { text: string; att: Attachment | null } } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -123,6 +126,15 @@ export function ChatArea({
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
         handleClearHistory();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        setSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+      }
+      if (e.key === 'Escape') {
+        setSearchOpen(false);
+        setSearchQuery('');
       }
     };
     window.addEventListener('keydown', handler);
@@ -296,6 +308,28 @@ export function ChatArea({
     await sendMessage(userText, currentAttachment);
   };
 
+  const searchLower = searchQuery.trim().toLowerCase();
+
+  const messageMatches = (msg: Message) => {
+    if (!searchLower) return true;
+    return msg.content.toLowerCase().includes(searchLower) ||
+      (msg.agent?.toLowerCase().includes(searchLower) ?? false);
+  };
+
+  /** Wrap matched substrings in a <mark> span */
+  const highlight = (text: string) => {
+    if (!searchLower) return text;
+    const idx = text.toLowerCase().indexOf(searchLower);
+    if (idx === -1) return text;
+    return (
+      <>
+        {text.slice(0, idx)}
+        <mark className="bg-emerald-500/30 text-emerald-200 rounded px-0.5">{text.slice(idx, idx + searchLower.length)}</mark>
+        {highlight(text.slice(idx + searchLower.length))}
+      </>
+    );
+  };
+
   const formatTimestamp = (date: Date) => {
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
@@ -314,22 +348,39 @@ export function ChatArea({
   return (
     <div className="flex-1 flex flex-col h-full bg-transparent relative w-full overflow-hidden">
       {/* Header */}
-      <header className="h-16 glass-panel border-b border-white/5 flex items-center px-4 md:px-6 z-10 shrink-0">
-        <button
-          onClick={onMenuClick}
-          className="md:hidden p-2 mr-3 -ml-2 text-zinc-400 hover:text-white rounded-md hover:bg-zinc-800 transition-colors"
-        >
-          <Menu className="w-5 h-5" />
-        </button>
-        <h2 className="text-sm font-medium text-zinc-200">Command Center</h2>
-        <div className="ml-auto flex items-center gap-3">
+      <header className="glass-panel border-b border-white/5 z-10 shrink-0">
+        <div className="h-16 flex items-center px-4 md:px-6">
           <button
-            onClick={handleClearHistory}
-            title="Clear conversation history"
-            className="p-1.5 text-zinc-600 hover:text-zinc-300 transition-colors rounded-md hover:bg-zinc-800"
+            onClick={onMenuClick}
+            className="md:hidden p-2 mr-3 -ml-2 text-zinc-400 hover:text-white rounded-md hover:bg-zinc-800 transition-colors"
           >
-            <Trash2 className="w-4 h-4" />
+            <Menu className="w-5 h-5" />
           </button>
+          <h2 className="text-sm font-medium text-zinc-200">Command Center</h2>
+          <div className="ml-auto flex items-center gap-3">
+            <button
+              onClick={() => {
+                setSearchOpen(o => {
+                  if (!o) setTimeout(() => searchInputRef.current?.focus(), 50);
+                  else setSearchQuery('');
+                  return !o;
+                });
+              }}
+              title="Search messages (Ctrl+F)"
+              className={cn(
+                "p-1.5 transition-colors rounded-md hover:bg-zinc-800",
+                searchOpen ? "text-emerald-400" : "text-zinc-600 hover:text-zinc-300"
+              )}
+            >
+              <Search className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleClearHistory}
+              title="Clear conversation history"
+              className="p-1.5 text-zinc-600 hover:text-zinc-300 transition-colors rounded-md hover:bg-zinc-800"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
           <span className={cn(
             "flex h-2 w-2 rounded-full transition-colors",
             connectionStatus === 'online' ? "bg-emerald-500" :
@@ -346,7 +397,32 @@ export function ChatArea({
              connectionStatus === 'offline' ? 'N8N_OFFLINE' :
              'N8N_CHECKING'}
           </span>
+          </div>
         </div>
+
+        {/* Search bar */}
+        {searchOpen && (
+          <div className="px-4 md:px-6 pb-3 flex items-center gap-2">
+            <div className="flex-1 flex items-center gap-2 glass-input rounded-lg px-3 py-1.5 border border-white/10 focus-within:border-emerald-500/40">
+              <Search className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search messages..."
+                className="flex-1 bg-transparent text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none"
+              />
+              {searchQuery && (
+                <span className="text-[10px] font-mono text-zinc-500 shrink-0">
+                  {messages.filter(messageMatches).length} match{messages.filter(messageMatches).length !== 1 ? 'es' : ''}
+                </span>
+              )}
+            </div>
+            <button onClick={() => { setSearchOpen(false); setSearchQuery(''); }} className="p-1.5 text-zinc-600 hover:text-zinc-300 transition-colors">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </header>
 
       {/* Messages */}
@@ -355,9 +431,10 @@ export function ChatArea({
           <div
             key={msg.id}
             className={cn(
-              "flex gap-3 md:gap-4 max-w-3xl group",
+              "flex gap-3 md:gap-4 max-w-3xl group transition-opacity",
               msg.role === 'user' ? "ml-auto flex-row-reverse" : "",
-              msg.role === 'system' ? "mx-auto text-center" : ""
+              msg.role === 'system' ? "mx-auto text-center" : "",
+              searchLower && !messageMatches(msg) ? "opacity-20" : ""
             )}
           >
             {msg.role !== 'system' && (
@@ -450,7 +527,7 @@ export function ChatArea({
                     {msg.content}
                   </ReactMarkdown>
                 ) : (
-                  msg.content
+                  highlight(msg.content)
                 )}
               </div>}
             </div>
@@ -544,6 +621,10 @@ export function ChatArea({
           <span className="text-[10px] font-mono text-zinc-700">
             <kbd className="px-1 py-0.5 rounded bg-zinc-800/60 border border-zinc-700 text-zinc-500">Shift+Enter</kbd>
             {' '}newline
+          </span>
+          <span className="text-[10px] font-mono text-zinc-700">
+            <kbd className="px-1 py-0.5 rounded bg-zinc-800/60 border border-zinc-700 text-zinc-500">Ctrl+F</kbd>
+            {' '}search
           </span>
           <span className="text-[10px] font-mono text-zinc-700">
             <kbd className="px-1 py-0.5 rounded bg-zinc-800/60 border border-zinc-700 text-zinc-500">Ctrl+K</kbd>
