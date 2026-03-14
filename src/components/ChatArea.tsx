@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, Bot, User, Loader2, Menu } from 'lucide-react';
+import { Send, Paperclip, Bot, User, Loader2, Menu, X, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Message {
   id: string;
@@ -11,9 +13,25 @@ interface Message {
   agent?: string;
 }
 
+interface Attachment {
+  name: string;
+  type: string;
+  size: number;
+  dataUrl: string;
+}
+
 interface ChatAreaProps {
   onMenuClick: () => void;
+  onAgentResponse: (name: string) => void;
+  onConnectionChange: (status: 'online' | 'offline') => void;
+  connectionStatus: 'checking' | 'online' | 'offline';
+  pendingInput: string;
+  onPendingInputConsumed: () => void;
+  onMessageSent: () => void;
+  sessionId: string;
 }
+
+const STORAGE_KEY = 'shift_control_messages';
 
 const INITIAL_MESSAGES: Message[] = [
   {
@@ -31,14 +49,36 @@ const INITIAL_MESSAGES: Message[] = [
   }
 ];
 
-// Generate a random session ID for this chat session to maintain context in n8n
-const SESSION_ID = Math.random().toString(36).substring(2, 15);
+function loadMessages(): Message[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return INITIAL_MESSAGES;
+    const parsed = JSON.parse(raw) as Array<Omit<Message, 'timestamp'> & { timestamp: string }>;
+    return parsed.map(m => ({ ...m, timestamp: new Date(m.timestamp) }));
+  } catch {
+    return INITIAL_MESSAGES;
+  }
+}
 
-export function ChatArea({ onMenuClick }: ChatAreaProps) {
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+export function ChatArea({
+  onMenuClick,
+  onAgentResponse,
+  onConnectionChange,
+  connectionStatus,
+  pendingInput,
+  onPendingInputConsumed,
+  onMessageSent,
+  sessionId,
+}: ChatAreaProps) {
+  const [messages, setMessages] = useState<Message[]>(loadMessages);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [attachment, setAttachment] = useState<Attachment | null>(null);
+  const [errorToast, setErrorToast] = useState<{ message: string; retryPayload: { text: string; att: Attachment | null } } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -48,20 +88,53 @@ export function ChatArea({ onMenuClick }: ChatAreaProps) {
     scrollToBottom();
   }, [messages, isTyping]);
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim()) return;
+  // Persist messages to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+  }, [messages]);
 
-    const userText = input.trim();
-    const newUserMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: userText,
-      timestamp: new Date(),
+  const handleClearHistory = () => {
+    setMessages(INITIAL_MESSAGES);
+  };
+
+  const dismissToast = () => {
+    setErrorToast(null);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  };
+
+  const showError = (message: string, retryPayload: { text: string; att: Attachment | null }) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setErrorToast({ message, retryPayload });
+    toastTimerRef.current = setTimeout(dismissToast, 6000);
+  };
+
+  // Sync pendingInput from App into textarea
+  useEffect(() => {
+    if (pendingInput) {
+      setInput(pendingInput);
+      onPendingInputConsumed();
+      textareaRef.current?.focus();
+    }
+  }, [pendingInput, onPendingInputConsumed]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAttachment({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        dataUrl: reader.result as string,
+      });
     };
+    reader.readAsDataURL(file);
+    // Reset input so the same file can be re-selected
+    e.target.value = '';
+  };
 
-    setMessages(prev => [...prev, newUserMsg]);
-    setInput('');
+  const sendMessage = async (userText: string, currentAttachment: Attachment | null) => {
     setIsTyping(true);
 
     // Prioritize local storage settings, then environment variable, fallback to localhost
@@ -72,56 +145,162 @@ export function ChatArea({ onMenuClick }: ChatAreaProps) {
     try {
       const response = await fetch(webhookUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: SESSION_ID,
+          sessionId,
           message: userText,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          ...(currentAttachment && { attachment: currentAttachment }),
         }),
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      const data = await response.json();
-      
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: data.output || data.message || 'Action completed successfully.',
-        timestamp: new Date(),
-        agent: data.agent || 'Orchestrator'
-      }]);
+      const contentType = response.headers.get('content-type') ?? '';
+
+      if (contentType.includes('text/event-stream') && response.body) {
+        // — Streaming path —
+        const msgId = (Date.now() + 1).toString();
+        let agentName = 'Orchestrator';
+
+        // Insert an empty assistant message to stream into
+        setMessages(prev => [...prev, {
+          id: msgId,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          agent: agentName,
+        }]);
+        setIsTyping(false);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          // Process complete SSE lines
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data:')) continue;
+            const raw = line.slice(5).trim();
+            if (raw === '[DONE]') break;
+            try {
+              const parsed = JSON.parse(raw);
+              const token: string = parsed.token ?? parsed.output ?? parsed.message ?? '';
+              if (parsed.agent) agentName = parsed.agent;
+              if (token) {
+                setMessages(prev => prev.map(m =>
+                  m.id === msgId ? { ...m, content: m.content + token, agent: agentName } : m
+                ));
+              }
+            } catch {
+              // Plain-text chunk (non-JSON SSE)
+              if (raw) {
+                setMessages(prev => prev.map(m =>
+                  m.id === msgId ? { ...m, content: m.content + raw } : m
+                ));
+              }
+            }
+          }
+        }
+
+        onAgentResponse(agentName);
+        onConnectionChange('online');
+      } else {
+        // — Standard JSON path (fallback) —
+        const data = await response.json();
+        const agentName = data.agent || 'Orchestrator';
+
+        setMessages(prev => [...prev, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: data.output || data.message || 'Action completed successfully.',
+          timestamp: new Date(),
+          agent: agentName,
+        }]);
+
+        onAgentResponse(agentName);
+        onConnectionChange('online');
+      }
     } catch (error) {
       console.error('Failed to send message to n8n:', error);
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        role: 'system',
-        content: `Connection Error: Unable to reach the n8n webhook at ${webhookUrl}. Ensure your n8n container is running and the webhook is active.`,
-        timestamp: new Date(),
-      }]);
+      showError(
+        `Cannot reach n8n webhook. Check your settings or ensure n8n is running.`,
+        { text: userText, att: currentAttachment }
+      );
+      onConnectionChange('offline');
     } finally {
       setIsTyping(false);
+      setAttachment(null);
     }
   };
 
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() && !attachment) return;
+
+    const userText = input.trim();
+    const currentAttachment = attachment;
+
+    setMessages(prev => [...prev, {
+      id: Date.now().toString(),
+      role: 'user',
+      content: userText || `[Attachment: ${currentAttachment?.name}]`,
+      timestamp: new Date(),
+    }]);
+    setInput('');
+    onMessageSent();
+    await sendMessage(userText, currentAttachment);
+  };
+
+  const handleRetry = async () => {
+    if (!errorToast) return;
+    const { text, att } = errorToast.retryPayload;
+    dismissToast();
+    await sendMessage(text, att);
+  };
+
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#09090b] relative w-full overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-transparent relative w-full overflow-hidden">
       {/* Header */}
-      <header className="h-16 border-b border-[#27272a] flex items-center px-4 md:px-6 bg-[#09090b]/80 backdrop-blur-sm z-10 shrink-0">
-        <button 
+      <header className="h-16 glass-panel border-b border-white/5 flex items-center px-4 md:px-6 z-10 shrink-0">
+        <button
           onClick={onMenuClick}
           className="md:hidden p-2 mr-3 -ml-2 text-zinc-400 hover:text-white rounded-md hover:bg-zinc-800 transition-colors"
         >
           <Menu className="w-5 h-5" />
         </button>
         <h2 className="text-sm font-medium text-zinc-200">Command Center</h2>
-        <div className="ml-auto flex items-center gap-2">
-          <span className="flex h-2 w-2 rounded-full bg-emerald-500"></span>
-          <span className="text-xs font-mono text-zinc-400 hidden sm:inline-block">WS_CONNECTED</span>
+        <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={handleClearHistory}
+            title="Clear conversation history"
+            className="p-1.5 text-zinc-600 hover:text-zinc-300 transition-colors rounded-md hover:bg-zinc-800"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+          <span className={cn(
+            "flex h-2 w-2 rounded-full transition-colors",
+            connectionStatus === 'online' ? "bg-emerald-500" :
+            connectionStatus === 'offline' ? "bg-red-500" :
+            "bg-amber-500 animate-pulse"
+          )} />
+          <span className={cn(
+            "text-xs font-mono hidden sm:inline-block transition-colors",
+            connectionStatus === 'online' ? "text-zinc-400" :
+            connectionStatus === 'offline' ? "text-red-400" :
+            "text-amber-400"
+          )}>
+            {connectionStatus === 'online' ? 'N8N_CONNECTED' :
+             connectionStatus === 'offline' ? 'N8N_OFFLINE' :
+             'N8N_CHECKING'}
+          </span>
         </div>
       </header>
 
@@ -138,13 +317,13 @@ export function ChatArea({ onMenuClick }: ChatAreaProps) {
           >
             {msg.role !== 'system' && (
               <div className={cn(
-                "w-8 h-8 rounded flex items-center justify-center shrink-0 mt-1",
-                msg.role === 'user' ? "bg-zinc-800 text-zinc-300" : "bg-emerald-500/10 border border-emerald-500/20 text-emerald-500"
+                "w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1 shadow-lg",
+                msg.role === 'user' ? "bg-gradient-to-tr from-zinc-800 to-zinc-700 text-zinc-300 border border-white/10" : "bg-gradient-to-tr from-emerald-500/20 to-emerald-400/10 border border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
               )}>
                 {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
               </div>
             )}
-            
+
             <div className={cn(
               "flex flex-col gap-1 max-w-[85%] md:max-w-full",
               msg.role === 'user' ? "items-end" : "items-start",
@@ -160,19 +339,48 @@ export function ChatArea({ onMenuClick }: ChatAreaProps) {
                   </span>
                 </div>
               )}
-              
+
               <div className={cn(
-                "text-sm leading-relaxed break-words w-full",
-                msg.role === 'user' ? "bg-zinc-800 text-zinc-100 px-4 py-2.5 rounded-2xl rounded-tr-sm" : 
-                msg.role === 'system' ? "text-xs font-mono text-zinc-500 bg-zinc-900/50 px-3 py-1 rounded border border-zinc-800" :
-                "text-zinc-300 bg-[#18181b] border border-[#27272a] px-4 py-2.5 rounded-2xl rounded-tl-sm"
+                "text-sm leading-relaxed break-words w-full shadow-sm transition-all hover:shadow-md",
+                msg.role === 'user' ? "bg-gradient-to-tr from-zinc-800 to-zinc-700/80 text-zinc-100 px-4 py-3 rounded-2xl rounded-tr-sm border border-white/5" :
+                msg.role === 'system' ? "text-xs font-mono text-zinc-500 glass-panel px-3 py-1.5 rounded-full border border-white/5 inline-block" :
+                "text-zinc-200 glass-panel px-4 py-3 rounded-2xl rounded-tl-sm border-white/5"
               )}>
-                {msg.content}
+                {msg.role === 'assistant' ? (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                      ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+                      li: ({ children }) => <li className="text-zinc-300">{children}</li>,
+                      code: ({ inline, children }: { inline?: boolean; children?: React.ReactNode }) =>
+                        inline
+                          ? <code className="font-mono text-xs bg-zinc-800 text-emerald-300 px-1.5 py-0.5 rounded">{children}</code>
+                          : <code className="block font-mono text-xs bg-zinc-900 text-emerald-300 p-3 rounded-lg my-2 overflow-x-auto whitespace-pre">{children}</code>,
+                      pre: ({ children }) => <>{children}</>,
+                      strong: ({ children }) => <strong className="text-zinc-100 font-semibold">{children}</strong>,
+                      a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline underline-offset-2 hover:text-emerald-300">{children}</a>,
+                      blockquote: ({ children }) => <blockquote className="border-l-2 border-emerald-500/40 pl-3 text-zinc-400 italic my-2">{children}</blockquote>,
+                      h1: ({ children }) => <h1 className="text-base font-bold text-zinc-100 mb-2">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-sm font-bold text-zinc-100 mb-1.5">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-sm font-semibold text-zinc-200 mb-1">{children}</h3>,
+                      hr: () => <hr className="border-zinc-700 my-3" />,
+                      table: ({ children }) => <div className="overflow-x-auto my-2"><table className="text-xs border-collapse w-full">{children}</table></div>,
+                      th: ({ children }) => <th className="border border-zinc-700 px-2 py-1 text-left text-zinc-300 bg-zinc-800/50">{children}</th>,
+                      td: ({ children }) => <td className="border border-zinc-700 px-2 py-1 text-zinc-400">{children}</td>,
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
+                ) : (
+                  msg.content
+                )}
               </div>
             </div>
           </div>
         ))}
-        
+
         {isTyping && (
           <div className="flex gap-3 md:gap-4 max-w-3xl">
             <div className="w-8 h-8 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 flex items-center justify-center shrink-0 mt-1">
@@ -191,39 +399,67 @@ export function ChatArea({ onMenuClick }: ChatAreaProps) {
       </div>
 
       {/* Input Area */}
-      <div className="p-3 md:p-4 bg-[#09090b] shrink-0 border-t border-[#27272a] md:border-t-0">
-        <form 
+      <div className="p-3 md:p-6 bg-transparent shrink-0">
+        <form
           onSubmit={handleSend}
-          className="max-w-4xl mx-auto relative flex items-end gap-2 bg-[#18181b] border border-[#27272a] rounded-xl p-2 focus-within:border-emerald-500/50 focus-within:ring-1 focus-within:ring-emerald-500/50 transition-all"
+          className="max-w-4xl mx-auto"
         >
-          <button 
-            type="button"
-            className="p-2.5 text-zinc-400 hover:text-zinc-200 transition-colors rounded-lg hover:bg-zinc-800 shrink-0 flex items-center justify-center"
-          >
-            <Paperclip className="w-5 h-5" />
-          </button>
-          
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend(e);
-              }
-            }}
-            placeholder="Command Shift Control..."
-            className="w-full max-h-32 min-h-[44px] bg-transparent text-zinc-100 placeholder:text-zinc-600 resize-none focus:outline-none py-3 text-sm"
-            rows={1}
-          />
-          
-          <button 
-            type="submit"
-            disabled={!input.trim() || isTyping}
-            className="p-2.5 bg-emerald-500 text-emerald-950 hover:bg-emerald-400 disabled:opacity-50 disabled:hover:bg-emerald-500 transition-colors rounded-lg shrink-0 flex items-center justify-center"
-          >
-            <Send className="w-5 h-5" />
-          </button>
+          {/* Attachment chip */}
+          {attachment && (
+            <div className="flex items-center gap-2 mb-2 px-2">
+              <div className="glass-input flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-zinc-300 border border-white/10">
+                <Paperclip className="w-3 h-3 text-zinc-400" />
+                <span className="font-mono truncate max-w-[200px]">{attachment.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setAttachment(null)}
+                  className="ml-1 text-zinc-500 hover:text-zinc-200 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="relative flex items-end gap-2 glass-input rounded-2xl p-2 focus-within:border-emerald-500/50 focus-within:shadow-[0_0_20px_rgba(16,185,129,0.15)] transition-all duration-300">
+            <input
+              type="file"
+              accept="image/*,video/*,.pdf"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2.5 text-zinc-400 hover:text-zinc-200 transition-colors rounded-lg hover:bg-zinc-800 shrink-0 flex items-center justify-center"
+            >
+              <Paperclip className="w-5 h-5" />
+            </button>
+
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend(e);
+                }
+              }}
+              placeholder="Command Shift Control..."
+              className="w-full max-h-32 min-h-[44px] bg-transparent text-zinc-100 placeholder:text-zinc-600 resize-none focus:outline-none py-3 text-sm"
+              rows={1}
+            />
+
+            <button
+              type="submit"
+              disabled={(!input.trim() && !attachment) || isTyping}
+              className="p-3 bg-gradient-to-tr from-emerald-600 to-emerald-400 text-emerald-950 hover:from-emerald-500 hover:to-emerald-300 disabled:opacity-50 disabled:grayscale transition-all rounded-xl shrink-0 flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:shadow-[0_0_25px_rgba(16,185,129,0.6)]"
+            >
+              <Send className="w-5 h-5" />
+            </button>
+          </div>
         </form>
         <div className="text-center mt-2 hidden sm:block">
           <span className="text-[10px] font-mono text-zinc-600">
@@ -231,7 +467,35 @@ export function ChatArea({ onMenuClick }: ChatAreaProps) {
           </span>
         </div>
       </div>
+
+      {/* Error Toast */}
+      {errorToast && (
+        <div className="absolute bottom-24 right-4 z-50 max-w-sm w-full pointer-events-auto">
+          <div className="glass-panel border border-red-500/30 rounded-xl px-4 py-3 shadow-[0_0_20px_rgba(239,68,68,0.15)] flex items-start gap-3">
+            <div className="shrink-0 w-2 h-2 rounded-full bg-red-500 mt-1.5 shadow-[0_0_6px_rgba(239,68,68,0.6)]" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-mono text-zinc-300 leading-relaxed">{errorToast.message}</p>
+              <div className="flex items-center gap-3 mt-2">
+                <button
+                  onClick={handleRetry}
+                  className="text-xs font-mono text-emerald-400 hover:text-emerald-300 transition-colors"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={dismissToast}
+                  className="text-xs font-mono text-zinc-600 hover:text-zinc-400 transition-colors"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+            <button onClick={dismissToast} className="shrink-0 text-zinc-600 hover:text-zinc-400 transition-colors">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
