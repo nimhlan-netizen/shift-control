@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Paperclip, Bot, User, Loader2, Menu, X, Trash2, Copy, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { format } from 'date-fns';
+import { format, formatDistanceToNowStrict, differenceInHours } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -76,6 +76,7 @@ export function ChatArea({
   const [isTyping, setIsTyping] = useState(false);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [, setTick] = useState(0);
   const [errorToast, setErrorToast] = useState<{ message: string; retryPayload: { text: string; att: Attachment | null } } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -109,6 +110,12 @@ export function ChatArea({
     setErrorToast({ message, retryPayload });
     toastTimerRef.current = setTimeout(dismissToast, 6000);
   };
+
+  // Tick every 30 s to refresh relative timestamps
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   // Auto-resize textarea to fit content
   useEffect(() => {
@@ -276,6 +283,14 @@ export function ChatArea({
     await sendMessage(userText, currentAttachment);
   };
 
+  const formatTimestamp = (date: Date) => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    if (diffMs < 60000) return 'just now';
+    if (differenceInHours(now, date) < 1) return formatDistanceToNowStrict(date, { addSuffix: true });
+    return format(date, 'HH:mm');
+  };
+
   const handleRetry = async () => {
     if (!errorToast) return;
     const { text, att } = errorToast.retryPayload;
@@ -351,8 +366,8 @@ export function ChatArea({
                   <span className="text-xs font-medium text-zinc-400">
                     {msg.role === 'user' ? 'You' : msg.agent}
                   </span>
-                  <span className="text-[10px] font-mono text-zinc-600">
-                    {format(msg.timestamp, 'HH:mm:ss')}
+                  <span className="text-[10px] font-mono text-zinc-600" title={format(msg.timestamp, 'HH:mm:ss dd/MM/yyyy')}>
+                    {formatTimestamp(msg.timestamp)}
                   </span>
                   {msg.role === 'assistant' && (
                     <button
