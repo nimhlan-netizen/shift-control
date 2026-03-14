@@ -40,29 +40,29 @@ export default function App() {
     sessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
 
-  // Probe the webhook URL on mount and every 30 s
-  useEffect(() => {
-    const probe = async () => {
-      // @ts-ignore
-      const storedUrl = localStorage.getItem('N8N_WEBHOOK_URL');
-      // @ts-ignore
-      const url = storedUrl || import.meta.env.VITE_N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/chat';
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5000);
-      try {
-        await fetch(url, { method: 'HEAD', signal: controller.signal });
-        setConnectionStatus('online');
-      } catch {
-        setConnectionStatus('offline');
-      } finally {
-        clearTimeout(timer);
-      }
-    };
-
-    probe();
-    const interval = setInterval(probe, 30000);
-    return () => clearInterval(interval);
+  // Probe the webhook URL — called on mount, every 30 s, and after settings save
+  const probeConnection = useCallback(async () => {
+    // @ts-ignore
+    const storedUrl = localStorage.getItem('N8N_WEBHOOK_URL');
+    // @ts-ignore
+    const url = storedUrl || import.meta.env.VITE_N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/chat';
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      await fetch(url, { method: 'HEAD', signal: controller.signal });
+      setConnectionStatus('online');
+    } catch {
+      setConnectionStatus('offline');
+    } finally {
+      clearTimeout(timer);
+    }
   }, []);
+
+  useEffect(() => {
+    probeConnection();
+    const interval = setInterval(probeConnection, 30000);
+    return () => clearInterval(interval);
+  }, [probeConnection]);
 
   const handleAgentResponse = useCallback((name: string) => {
     setLastActiveAgent(name);
@@ -167,7 +167,11 @@ export default function App() {
 
       <SettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={() => {
+          setIsSettingsOpen(false);
+          // Re-probe immediately so the status badge reflects the new URL
+          probeConnection();
+        }}
       />
     </div>
   );
