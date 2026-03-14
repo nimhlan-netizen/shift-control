@@ -540,8 +540,34 @@ export function ChatArea({
                       code: ({ inline, children }: { inline?: boolean; children?: React.ReactNode }) =>
                         inline
                           ? <code className="font-mono text-xs bg-zinc-800 text-emerald-300 px-1.5 py-0.5 rounded">{children}</code>
-                          : <code className="block font-mono text-xs bg-zinc-900 text-emerald-300 p-3 rounded-lg my-2 overflow-x-auto whitespace-pre">{children}</code>,
-                      pre: ({ children }) => <>{children}</>,
+                          : <code className="block font-mono text-xs text-emerald-300 overflow-x-auto whitespace-pre">{children}</code>,
+                      pre: ({ children }) => {
+                        const CodeBlockCopy = () => {
+                          const [copied, setCopied] = React.useState(false);
+                          const extractText = (node: React.ReactNode): string => {
+                            if (typeof node === 'string') return node;
+                            if (Array.isArray(node)) return node.map(extractText).join('');
+                            if (React.isValidElement(node)) return extractText((node.props as { children?: React.ReactNode }).children);
+                            return '';
+                          };
+                          const text = extractText(children);
+                          return (
+                            <button
+                              onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                              className="absolute top-2 right-2 p-1 text-zinc-600 hover:text-zinc-300 transition-colors rounded"
+                              title="Copy code"
+                            >
+                              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          );
+                        };
+                        return (
+                          <div className="relative bg-zinc-900 rounded-lg my-2 p-3">
+                            <CodeBlockCopy />
+                            {children}
+                          </div>
+                        );
+                      },
                       strong: ({ children }) => <strong className="text-zinc-100 font-semibold">{children}</strong>,
                       a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline underline-offset-2 hover:text-emerald-300">{children}</a>,
                       blockquote: ({ children }) => <blockquote className="border-l-2 border-emerald-500/40 pl-3 text-zinc-400 italic my-2">{children}</blockquote>,
