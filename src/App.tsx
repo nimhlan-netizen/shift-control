@@ -7,6 +7,14 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { SettingsModal } from './components/SettingsModal';
+import {
+  type Session,
+  migrateIfNeeded,
+  newSession,
+  saveSessions,
+  saveActiveSessionId,
+  getMessageKey,
+} from './lib/sessions';
 
 export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -16,7 +24,21 @@ export default function App() {
   const [pendingInput, setPendingInput] = useState('');
   const [messageCount, setMessageCount] = useState(0);
 
-  const sessionIdRef = useRef(Math.random().toString(36).substring(2, 15));
+  // Sessions
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string>('');
+
+  // Initialise sessions from localStorage (with legacy migration)
+  useEffect(() => {
+    const { sessions: s, activeId } = migrateIfNeeded();
+    setSessions(s);
+    setActiveSessionId(activeId);
+  }, []);
+
+  const sessionIdRef = useRef('');
+  useEffect(() => {
+    sessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
 
   // Probe the webhook URL on mount and every 30 s
   useEffect(() => {
@@ -52,6 +74,62 @@ export default function App() {
     setIsSidebarOpen(false);
   }, []);
 
+  const handleNewSession = useCallback(() => {
+    const s = newSession();
+    setSessions(prev => {
+      const next = [s, ...prev];
+      saveSessions(next);
+      return next;
+    });
+    setActiveSessionId(s.id);
+    saveActiveSessionId(s.id);
+    setMessageCount(0);
+    setIsSidebarOpen(false);
+  }, []);
+
+  const handleSwitchSession = useCallback((id: string) => {
+    setActiveSessionId(id);
+    saveActiveSessionId(id);
+    setMessageCount(0);
+    setIsSidebarOpen(false);
+  }, []);
+
+  const handleDeleteSession = useCallback((id: string) => {
+    setSessions(prev => {
+      const next = prev.filter(s => s.id !== id);
+      saveSessions(next);
+
+      // If we deleted the active session, switch to the first remaining one
+      // (or create a brand-new session if none left)
+      if (id === activeSessionId) {
+        if (next.length > 0) {
+          setActiveSessionId(next[0].id);
+          saveActiveSessionId(next[0].id);
+        } else {
+          const fresh = newSession();
+          next.push(fresh);
+          saveSessions(next);
+          setActiveSessionId(fresh.id);
+          saveActiveSessionId(fresh.id);
+        }
+        setMessageCount(0);
+      }
+
+      return next;
+    });
+  }, [activeSessionId]);
+
+  const handleRenameSession = useCallback((id: string, name: string) => {
+    setSessions(prev => {
+      const next = prev.map(s => s.id === id ? { ...s, name } : s);
+      saveSessions(next);
+      return next;
+    });
+  }, []);
+
+  // Don't render until sessions are ready
+  if (!activeSessionId) return null;
+
   return (
     <div className="flex h-screen w-full bg-[#030303] text-zinc-100 overflow-hidden font-sans relative">
       {/* Ambient Background Orbs */}
@@ -66,9 +144,16 @@ export default function App() {
         connectionStatus={connectionStatus}
         onAgentSelect={handleAgentSelect}
         messageCount={messageCount}
-        sessionId={sessionIdRef.current}
+        sessionId={activeSessionId}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onNewSession={handleNewSession}
+        onSwitchSession={handleSwitchSession}
+        onDeleteSession={handleDeleteSession}
+        onRenameSession={handleRenameSession}
       />
       <ChatArea
+        key={activeSessionId}
         onMenuClick={() => setIsSidebarOpen(true)}
         onAgentResponse={handleAgentResponse}
         onConnectionChange={setConnectionStatus}
@@ -76,7 +161,8 @@ export default function App() {
         pendingInput={pendingInput}
         onPendingInputConsumed={() => setPendingInput('')}
         onMessageSent={() => setMessageCount(c => c + 1)}
-        sessionId={sessionIdRef.current}
+        sessionId={activeSessionId}
+        storageKey={getMessageKey(activeSessionId)}
       />
 
       <SettingsModal
@@ -86,5 +172,3 @@ export default function App() {
     </div>
   );
 }
-
-

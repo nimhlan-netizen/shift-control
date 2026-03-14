@@ -35,10 +35,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <div 
-        className="bg-[#18181b] border border-[#27272a] rounded-xl w-full max-w-md shadow-2xl flex flex-col overflow-hidden"
+        className="glass-panel rounded-xl w-full max-w-md shadow-2xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between p-4 border-b border-[#27272a] bg-[#09090b]/50">
+        <div className="flex items-center justify-between p-4 border-b border-white/5 bg-black/20">
           <h2 className="text-lg font-medium text-white flex items-center gap-2">
             Settings
           </h2>
@@ -63,7 +63,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 value={webhookUrl}
                 onChange={(e) => setWebhookUrl(e.target.value)}
                 placeholder="http://localhost:5678/webhook/chat"
-                className="w-full bg-[#09090b] border border-[#27272a] text-white rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all placeholder:text-zinc-600"
+                className="w-full glass-input text-white rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50 focus:shadow-[0_0_15px_rgba(16,185,129,0.15)] transition-all placeholder:text-zinc-600"
               />
               <p className="text-xs text-zinc-500">The URL where Shift Control routes its requests.</p>
             </div>
@@ -79,7 +79,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 value={openRouterKey}
                 onChange={(e) => setOpenRouterKey(e.target.value)}
                 placeholder="sk-or-v1-..."
-                className="w-full bg-[#09090b] border border-[#27272a] text-white rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all placeholder:text-zinc-600"
+                className="w-full glass-input text-white rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50 focus:shadow-[0_0_15px_rgba(16,185,129,0.15)] transition-all placeholder:text-zinc-600"
               />
               <p className="text-xs text-zinc-500">Only required if LLM routing is handled client-side.</p>
             </div>

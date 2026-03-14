@@ -30,9 +30,8 @@ interface ChatAreaProps {
   onPendingInputConsumed: () => void;
   onMessageSent: () => void;
   sessionId: string;
+  storageKey: string;
 }
-
-const STORAGE_KEY = 'shift_control_messages';
 
 const INITIAL_MESSAGES: Message[] = [
   {
@@ -50,9 +49,9 @@ const INITIAL_MESSAGES: Message[] = [
   }
 ];
 
-function loadMessages(): Message[] {
+function loadMessages(storageKey: string): Message[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return INITIAL_MESSAGES;
     const parsed = JSON.parse(raw) as Array<Omit<Message, 'timestamp'> & { timestamp: string }>;
     return parsed.map(m => ({ ...m, timestamp: new Date(m.timestamp) }));
@@ -70,8 +69,9 @@ export function ChatArea({
   onPendingInputConsumed,
   onMessageSent,
   sessionId,
+  storageKey,
 }: ChatAreaProps) {
-  const [messages, setMessages] = useState<Message[]>(loadMessages);
+  const [messages, setMessages] = useState<Message[]>(() => loadMessages(storageKey));
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
@@ -91,10 +91,10 @@ export function ChatArea({
     scrollToBottom();
   }, [messages, isTyping]);
 
-  // Persist messages to localStorage
+  // Persist messages to localStorage (per-session key)
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
-  }, [messages]);
+    localStorage.setItem(storageKey, JSON.stringify(messages));
+  }, [messages, storageKey]);
 
   const handleClearHistory = () => {
     setMessages(INITIAL_MESSAGES);
