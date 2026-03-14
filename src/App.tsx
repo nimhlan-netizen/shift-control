@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { SettingsModal } from './components/SettingsModal';
@@ -17,6 +17,30 @@ export default function App() {
   const [messageCount, setMessageCount] = useState(0);
 
   const sessionIdRef = useRef(Math.random().toString(36).substring(2, 15));
+
+  // Probe the webhook URL on mount and every 30 s
+  useEffect(() => {
+    const probe = async () => {
+      // @ts-ignore
+      const storedUrl = localStorage.getItem('N8N_WEBHOOK_URL');
+      // @ts-ignore
+      const url = storedUrl || import.meta.env.VITE_N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/chat';
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      try {
+        await fetch(url, { method: 'HEAD', signal: controller.signal });
+        setConnectionStatus('online');
+      } catch {
+        setConnectionStatus('offline');
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    probe();
+    const interval = setInterval(probe, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleAgentResponse = useCallback((name: string) => {
     setLastActiveAgent(name);
