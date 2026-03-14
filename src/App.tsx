@@ -127,11 +127,29 @@ export default function App() {
     });
   }, []);
 
+  // Swipe-to-open sidebar on mobile (swipe right from left edge)
+  const touchStartX = useRef<number | null>(null);
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    const x = e.touches[0].clientX;
+    // Only track swipes starting within 30 px of the left edge
+    if (x < 30) touchStartX.current = x;
+  }, []);
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const delta = e.changedTouches[0].clientX - touchStartX.current;
+    if (delta > 60) setIsSidebarOpen(true);
+    touchStartX.current = null;
+  }, []);
+
   // Don't render until sessions are ready
   if (!activeSessionId) return null;
 
   return (
-    <div className="flex h-screen w-full bg-[#030303] text-zinc-100 overflow-hidden font-sans relative">
+    <div
+      className="flex h-screen w-full bg-[#030303] text-zinc-100 overflow-hidden font-sans relative"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       {/* Ambient Background Orbs */}
       <div className="absolute top-[-15%] left-[-10%] w-[50%] h-[50%] rounded-full bg-emerald-500/10 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-500/5 blur-[100px] pointer-events-none" />
