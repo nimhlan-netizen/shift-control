@@ -12,7 +12,10 @@
       "name": "Chat Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "shift-control-chat-webhook"
     },
     {
@@ -23,14 +26,17 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"anthropic/claude-3.5-sonnet\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are the Orchestrator Agent for Shift Control. Classify the user's intent into one of three categories: 'shopify', 'social', or 'general'. Respond ONLY with a JSON object in this exact format: { \\\"intent\\\": \\\"<category>\\\", \\\"extracted_data\\\": \\\"<any specific details>\\\", \\\"response_message\\\": \\\"<A friendly message acknowledging the task>\\\" }\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"{{ $json.body.message }}\"\n    }\n  ]\n}",
+        "jsonBody": "={\n  \"model\": \"anthropic/claude-3.5-sonnet\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are the Orchestrator Agent for Shift Control. Classify the user's intent into one of three categories: 'shopify', 'social', 'media', or 'general'. Respond ONLY with a JSON object in this exact format: { \\\"intent\\\": \\\"<category>\\\", \\\"extracted_data\\\": \\\"<any specific details>\\\", \\\"response_message\\\": \\\"<A friendly message acknowledging the task>\\\" }\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"{{ $json.body.message }}\"\n    }\n  ]\n}",
         "options": {}
       },
       "id": "openrouter-llm-node",
       "name": "OpenRouter LLM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [450, 300],
+      "position": [
+        450,
+        300
+      ],
       "credentials": {
         "httpHeaderAuth": {
           "id": "YOUR_CREDENTIAL_ID",
@@ -53,8 +59,12 @@
               "output": 1
             },
             {
-              "value2": "general",
+              "value2": "media",
               "output": 2
+            },
+            {
+              "value2": "general",
+              "output": 3
             }
           ]
         }
@@ -63,7 +73,10 @@
       "name": "Route by Intent",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 1,
-      "position": [650, 300]
+      "position": [
+        650,
+        300
+      ]
     },
     {
       "parameters": {
@@ -86,7 +99,10 @@
       "name": "Format Shopify Response",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [900, 150]
+      "position": [
+        900,
+        150
+      ]
     },
     {
       "parameters": {
@@ -109,7 +125,10 @@
       "name": "Format Social Response",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [900, 300]
+      "position": [
+        900,
+        300
+      ]
     },
     {
       "parameters": {
@@ -132,7 +151,36 @@
       "name": "Format General Response",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [900, 450]
+      "position": [
+        900,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "output",
+              "value": "={{ JSON.parse($('OpenRouter LLM').item.choices[0].message.content).response_message }}"
+            },
+            {
+              "name": "agent",
+              "value": "Media Ingest"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-media-response",
+      "name": "Format Media Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        900,
+        450
+      ]
     }
   ],
   "connections": {
@@ -170,6 +218,13 @@
         [
           {
             "node": "Format Social Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Media Response",
             "type": "main",
             "index": 0
           }

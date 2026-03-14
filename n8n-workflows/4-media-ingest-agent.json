@@ -1,0 +1,169 @@
+{
+  "name": "Media Ingest Agent",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "execute-workflow-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.attachment?.type ?? '' }}",
+              "operation": "startsWith",
+              "value2": "image/"
+            }
+          ]
+        }
+      },
+      "id": "has-attachment",
+      "name": "Has Attachment?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cloudinary.com/v1_1/{{ $env.CLOUDINARY_CLOUD_NAME }}/image/upload",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"file\": \"{{ $json.attachment.dataUrl }}\",\n  \"upload_preset\": \"{{ $env.CLOUDINARY_UPLOAD_PRESET }}\",\n  \"folder\": \"shift-control\"\n}",
+        "options": {}
+      },
+      "id": "upload-to-cloudinary",
+      "name": "Upload to Cloudinary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [720, 200],
+      "notes": "Requires CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET env vars"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"anthropic/claude-3.5-haiku\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a media tagging assistant. Given a Cloudinary image URL, return a JSON object with: { \\\"tags\\\": [\\\"tag1\\\", \\\"tag2\\\"], \\\"alt_text\\\": \\\"brief description\\\", \\\"suggested_filename\\\": \\\"kebab-case-name.jpg\\\" }. Respond ONLY with the JSON object.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Image URL: {{ $json.secure_url }}. Original filename: {{ $('Execute Workflow Trigger').item.json.attachment.name }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "generate-metadata",
+      "name": "Generate Metadata (LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [960, 200]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "output",
+              "value": "={{ 'Media uploaded successfully.\\n\\n**URL:** ' + $('Upload to Cloudinary').item.json.secure_url + '\\n**Tags:** ' + JSON.parse($json.choices[0].message.content).tags.join(', ') + '\\n**Alt text:** ' + JSON.parse($json.choices[0].message.content).alt_text }}"
+            },
+            {
+              "name": "agent",
+              "value": "Media Ingest"
+            },
+            {
+              "name": "media_url",
+              "value": "={{ $('Upload to Cloudinary').item.json.secure_url }}"
+            },
+            {
+              "name": "tags",
+              "value": "={{ JSON.parse($json.choices[0].message.content).tags.join(', ') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-image-success",
+      "name": "Format Image Success",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [1200, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"anthropic/claude-3.5-haiku\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a media ingestion assistant. The user wants to ingest or manage media but did not attach a file. Ask them to attach an image (JPG, PNG, WebP) or PDF and describe what they want to do with it.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"{{ $json.message }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "prompt-for-file",
+      "name": "Prompt for File (LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [720, 400]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "output",
+              "value": "={{ $json.choices[0].message.content }}"
+            },
+            {
+              "name": "agent",
+              "value": "Media Ingest"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-prompt-response",
+      "name": "Format Prompt Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [960, 400]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [{ "node": "Has Attachment?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Has Attachment?": {
+      "main": [
+        [{ "node": "Upload to Cloudinary", "type": "main", "index": 0 }],
+        [{ "node": "Prompt for File (LLM)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Upload to Cloudinary": {
+      "main": [
+        [{ "node": "Generate Metadata (LLM)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Generate Metadata (LLM)": {
+      "main": [
+        [{ "node": "Format Image Success", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prompt for File (LLM)": {
+      "main": [
+        [{ "node": "Format Prompt Response", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "shift-control"
+  }
+}

@@ -17,14 +17,131 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"query\": \"mutation productUpdate($input: ProductInput!) { productUpdate(input: $input) { product { id title } userErrors { field message } } }\",\n  \"variables\": {\n    \"input\": {\n      \"id\": \"gid://shopify/Product/{{ $json.extracted_data.productId }}\",\n      \"descriptionHtml\": \"{{ $json.extracted_data.newDescription }}\"\n    }\n  }\n}",
-        "options": {}
+        "jsonBody": "={\n  \"query\": \"query getProduct($id: ID!) { product(id: $id) { id title descriptionHtml media(first: 5) { edges { node { ... on MediaImage { image { url } } } } } } }\",\n  \"variables\": {\n    \"id\": \"gid://shopify/Product/{{ $json.extracted_data.productId }}\"\n  }\n}"
       },
-      "id": "shopify-graphql-api",
-      "name": "Shopify GraphQL API",
+      "id": "get-product-info",
+      "name": "Get Product Info",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [450, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_SHOPIFY_CREDENTIAL_ID",
+          "name": "Shopify Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_OPENROUTER_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"anthropic/claude-3.5-sonnet\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a Shopify expert copywriter. Enhance this product description to be more engaging and conversion-focused. ONLY output the HTML description, nothing else.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Product: {{ $json.data.product.title }}\\nDescription: {{ $json.data.product.descriptionHtml }}\"\n    }\n  ]\n}"
+      },
+      "id": "enhance-description",
+      "name": "Enhance Description (LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $('Execute Workflow Trigger').item.json.extracted_data.generateImage }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "true",
+              "output": 0
+            }
+          ]
+        },
+        "fallbackOutput": 1
+      },
+      "id": "provider-switch",
+      "name": "Provider Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fal.run/fal-ai/flux-pro",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Key YOUR_FAL_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"prompt\": \"A high-quality lifestyle photography shot of a person wearing a {{ $('Get Product Info').item.json.data.product.title }}. Clean lighting, professional editorial photography, 8k resolution.\",\n  \"image_size\": \"square\"\n}"
+      },
+      "id": "generate-lifestyle-shot",
+      "name": "Generate Lifestyle Shot (Fal.ai FLUX)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://your-store.myshopify.com/admin/api/2024-01/graphql.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"query\": \"mutation productCreateMedia($media: [CreateMediaInput!]!, $productId: ID!) { productCreateMedia(media: $media, productId: $productId) { media { mediaContentType status } userErrors { field message } } }\",\n  \"variables\": {\n    \"productId\": \"gid://shopify/Product/{{ $('Execute Workflow Trigger').item.json.extracted_data.productId }}\",\n    \"media\": [\n      {\n        \"alt\": \"Lifestyle shot\",\n        \"mediaContentType\": \"IMAGE\",\n        \"originalSource\": \"{{ $json.images[0].url }}\"\n      }\n    ]\n  }\n}"
+      },
+      "id": "upload-media",
+      "name": "Upload Media to Shopify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 100],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_SHOPIFY_CREDENTIAL_ID",
+          "name": "Shopify Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://your-store.myshopify.com/admin/api/2024-01/graphql.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"query\": \"mutation productUpdate($input: ProductInput!) { productUpdate(input: $input) { product { id title } userErrors { field message } } }\",\n  \"variables\": {\n    \"input\": {\n      \"id\": \"gid://shopify/Product/{{ $('Execute Workflow Trigger').item.json.extracted_data.productId }}\",\n      \"descriptionHtml\": \"{{ $('Enhance Description (LLM)').item.json.choices[0].message.content }}\"\n    }\n  }\n}"
+      },
+      "id": "update-product",
+      "name": "Update Product",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 300],
       "credentials": {
         "httpHeaderAuth": {
           "id": "YOUR_SHOPIFY_CREDENTIAL_ID",
@@ -43,7 +160,7 @@
             },
             {
               "name": "message",
-              "value": "Shopify product updated successfully."
+              "value": "Shopify product updated successfully with enhanced description and media."
             }
           ]
         },
@@ -53,7 +170,7 @@
       "name": "Format Success",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [650, 300]
+      "position": [1650, 300]
     }
   ],
   "connections": {
@@ -61,14 +178,76 @@
       "main": [
         [
           {
-            "node": "Shopify GraphQL API",
+            "node": "Get Product Info",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Shopify GraphQL API": {
+    "Get Product Info": {
+      "main": [
+        [
+          {
+            "node": "Enhance Description (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enhance Description (LLM)": {
+      "main": [
+        [
+          {
+            "node": "Provider Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Provider Switch": {
+      "main": [
+        [
+          {
+            "node": "Generate Lifestyle Shot (Fal.ai FLUX)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Lifestyle Shot (Fal.ai FLUX)": {
+      "main": [
+        [
+          {
+            "node": "Upload Media to Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Media to Shopify": {
+      "main": [
+        [
+          {
+            "node": "Update Product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Product": {
       "main": [
         [
           {
@@ -84,5 +263,5 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "1"
+  "versionId": "2"
 }
