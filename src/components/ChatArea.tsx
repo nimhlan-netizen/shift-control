@@ -108,6 +108,14 @@ export function ChatArea({
     toastTimerRef.current = setTimeout(dismissToast, 6000);
   };
 
+  // Auto-resize textarea to fit content
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [input]);
+
   // Sync pendingInput from App into textarea
   useEffect(() => {
     if (pendingInput) {
@@ -448,8 +456,7 @@ export function ChatArea({
                 }
               }}
               placeholder="Command Shift Control..."
-              className="w-full max-h-32 min-h-[44px] bg-transparent text-zinc-100 placeholder:text-zinc-600 resize-none focus:outline-none py-3 text-sm"
-              rows={1}
+              className="w-full max-h-48 min-h-[44px] bg-transparent text-zinc-100 placeholder:text-zinc-600 resize-none focus:outline-none py-3 text-sm overflow-y-auto"
             />
 
             <button
