@@ -211,33 +211,43 @@ export function Sidebar({
           <div className="px-4">
             <h2 className="text-xs font-mono text-zinc-500 uppercase tracking-wider mb-3">System Status</h2>
             <div className="glass-input rounded-xl p-3 border border-white/5">
-              <div className="flex items-center justify-between mb-3 md:mb-2">
-                <span className="text-xs text-zinc-400 flex items-center gap-1.5">
-                  <TerminalSquare className="w-3 h-3" /> Session ID
-                </span>
-                <span className="text-xs font-mono text-zinc-500">{sessionId.slice(0, 8)}</span>
-              </div>
-              <div className="flex items-center justify-between mb-3 md:mb-2">
-                <span className="text-xs text-zinc-400 flex items-center gap-1.5">
-                  <Bot className="w-3 h-3" /> Messages
-                </span>
-                <span className="text-xs font-mono text-zinc-400">{messageCount}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-zinc-400 flex items-center gap-1.5">
-                  <Bot className="w-3 h-3" /> LLM Router
-                </span>
-                <span className={cn(
-                  "text-xs font-mono",
-                  connectionStatus === 'online' ? "text-emerald-400" :
-                  connectionStatus === 'offline' ? "text-red-400" :
-                  "text-amber-400"
-                )}>
-                  {connectionStatus === 'online' ? 'Online' :
-                   connectionStatus === 'offline' ? 'Offline' :
-                   'Checking...'}
-                </span>
-              </div>
+              {connectionStatus === 'checking' ? (
+                /* Skeleton shimmer while probing */
+                <div className="space-y-3 animate-pulse">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <div className="h-3 w-20 bg-zinc-800 rounded" />
+                      <div className="h-3 w-12 bg-zinc-800 rounded" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-3 md:mb-2">
+                    <span className="text-xs text-zinc-400 flex items-center gap-1.5">
+                      <TerminalSquare className="w-3 h-3" /> Session ID
+                    </span>
+                    <span className="text-xs font-mono text-zinc-500">{sessionId.slice(0, 8)}</span>
+                  </div>
+                  <div className="flex items-center justify-between mb-3 md:mb-2">
+                    <span className="text-xs text-zinc-400 flex items-center gap-1.5">
+                      <Bot className="w-3 h-3" /> Messages
+                    </span>
+                    <span className="text-xs font-mono text-zinc-400">{messageCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-zinc-400 flex items-center gap-1.5">
+                      <Bot className="w-3 h-3" /> LLM Router
+                    </span>
+                    <span className={cn(
+                      "text-xs font-mono",
+                      connectionStatus === 'online' ? "text-emerald-400" : "text-red-400"
+                    )}>
+                      {connectionStatus === 'online' ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
