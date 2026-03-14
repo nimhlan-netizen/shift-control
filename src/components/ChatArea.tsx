@@ -160,9 +160,22 @@ export function ChatArea({
     }
   }, [pendingInput, onPendingInputConsumed]);
 
+  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      const mb = (file.size / 1024 / 1024).toFixed(1);
+      showError(
+        `File too large (${mb} MB). Maximum attachment size is 10 MB.`,
+        { text: '', att: null }
+      );
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
       setAttachment({
