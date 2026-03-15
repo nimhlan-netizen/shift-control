@@ -4,9 +4,12 @@
  */
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Sidebar } from './components/Sidebar';
+import { Settings, History, TerminalSquare } from 'lucide-react';
+import { TeamBar } from './components/TeamBar';
 import { ChatArea } from './components/ChatArea';
+import { SessionsDropdown } from './components/SessionsDropdown';
 import { SettingsModal } from './components/SettingsModal';
+import { parseMentionedAgent } from './lib/agents';
 import {
   type Session,
   migrateIfNeeded,
@@ -17,18 +20,17 @@ import {
 } from './lib/sessions';
 
 export default function App() {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSessionsOpen, setIsSessionsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [lastActiveAgent, setLastActiveAgent] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'online' | 'offline'>('checking');
-  const [pendingInput, setPendingInput] = useState('');
-  const [messageCount, setMessageCount] = useState(0);
+  const [explicitAgentId, setExplicitAgentId] = useState<string | null>(null);
+  const [isTyping, setIsTyping] = useState(false);
 
   // Sessions
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>('');
 
-  // Initialise sessions from localStorage (with legacy migration)
   useEffect(() => {
     const { sessions: s, activeId } = migrateIfNeeded();
     setSessions(s);
@@ -40,7 +42,6 @@ export default function App() {
     sessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
 
-  // Probe the webhook URL — called on mount, every 30 s, and after settings save
   const probeConnection = useCallback(async () => {
     // @ts-ignore
     const storedUrl = localStorage.getItem('N8N_WEBHOOK_URL');
@@ -71,12 +72,8 @@ export default function App() {
 
   const handleAgentResponse = useCallback((name: string) => {
     setLastActiveAgent(name);
+    setExplicitAgentId(null);
     setTimeout(() => setLastActiveAgent(null), 4000);
-  }, []);
-
-  const handleAgentSelect = useCallback((prefix: string) => {
-    setPendingInput(prefix);
-    setIsSidebarOpen(false);
   }, []);
 
   const handleNewSession = useCallback(() => {
@@ -88,15 +85,11 @@ export default function App() {
     });
     setActiveSessionId(s.id);
     saveActiveSessionId(s.id);
-    setMessageCount(0);
-    setIsSidebarOpen(false);
   }, []);
 
   const handleSwitchSession = useCallback((id: string) => {
     setActiveSessionId(id);
     saveActiveSessionId(id);
-    setMessageCount(0);
-    setIsSidebarOpen(false);
   }, []);
 
   const handleDeleteSession = useCallback((id: string) => {
@@ -104,8 +97,6 @@ export default function App() {
       const next = prev.filter(s => s.id !== id);
       saveSessions(next);
 
-      // If we deleted the active session, switch to the first remaining one
-      // (or create a brand-new session if none left)
       if (id === activeSessionId) {
         if (next.length > 0) {
           setActiveSessionId(next[0].id);
@@ -117,7 +108,6 @@ export default function App() {
           setActiveSessionId(fresh.id);
           saveActiveSessionId(fresh.id);
         }
-        setMessageCount(0);
       }
 
       return next;
@@ -132,58 +122,101 @@ export default function App() {
     });
   }, []);
 
-  // Swipe-to-open sidebar on mobile (swipe right from left edge)
-  const touchStartX = useRef<number | null>(null);
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    const x = e.touches[0].clientX;
-    // Only track swipes starting within 30 px of the left edge
-    if (x < 30) touchStartX.current = x;
-  }, []);
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    if (touchStartX.current === null) return;
-    const delta = e.changedTouches[0].clientX - touchStartX.current;
-    if (delta > 60) setIsSidebarOpen(true);
-    touchStartX.current = null;
+  const handleMessageSend = useCallback((text: string) => {
+    const mentioned = parseMentionedAgent(text);
+    setExplicitAgentId(mentioned?.id ?? null);
   }, []);
 
-  // Don't render until sessions are ready
   if (!activeSessionId) return null;
 
   return (
-    <div
-      className="flex h-screen w-full bg-[#030303] text-zinc-100 overflow-hidden font-sans relative"
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-    >
+    <div className="flex flex-col h-screen w-full bg-[#030303] text-zinc-100 overflow-hidden font-sans relative">
       {/* Ambient Background Orbs */}
       <div className="absolute top-[-15%] left-[-10%] w-[50%] h-[50%] rounded-full bg-emerald-500/10 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-500/5 blur-[100px] pointer-events-none" />
 
-      <Sidebar
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        lastActiveAgent={lastActiveAgent}
-        connectionStatus={connectionStatus}
-        onAgentSelect={handleAgentSelect}
-        messageCount={messageCount}
-        sessionId={activeSessionId}
-        sessions={sessions}
-        activeSessionId={activeSessionId}
-        onNewSession={handleNewSession}
-        onSwitchSession={handleSwitchSession}
-        onDeleteSession={handleDeleteSession}
-        onRenameSession={handleRenameSession}
+      {/* Header */}
+      <header className="glass-panel border-b border-white/5 z-10 shrink-0">
+        <div className="h-14 flex items-center px-4 md:px-6 gap-3">
+          {/* Wordmark */}
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-md bg-gradient-to-tr from-emerald-500/20 to-emerald-400/5 flex items-center justify-center border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.15)]">
+              <TerminalSquare className="w-4 h-4 text-emerald-400" />
+            </div>
+            <span className="font-mono font-bold text-sm tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-100 to-zinc-400 select-none">
+              SHIFT CONTROL
+            </span>
+          </div>
+
+          <div className="ml-auto flex items-center gap-3">
+            {/* Connection status */}
+            <div className="hidden sm:flex items-center gap-1.5">
+              <span className={[
+                'w-1.5 h-1.5 rounded-full',
+                connectionStatus === 'online'  ? 'bg-emerald-500' :
+                connectionStatus === 'offline' ? 'bg-red-500' :
+                'bg-amber-500 animate-pulse'
+              ].join(' ')} />
+              <span className={[
+                'text-xs font-mono',
+                connectionStatus === 'online'  ? 'text-zinc-500' :
+                connectionStatus === 'offline' ? 'text-red-400' :
+                'text-amber-400'
+              ].join(' ')}>
+                {connectionStatus === 'online'  ? 'Connected' :
+                 connectionStatus === 'offline' ? 'Offline' :
+                 'Connecting...'}
+              </span>
+            </div>
+
+            {/* Sessions dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setIsSessionsOpen(o => !o)}
+                title="Sessions"
+                className="p-1.5 text-zinc-500 hover:text-zinc-200 transition-colors rounded-md hover:bg-zinc-800"
+              >
+                <History className="w-4 h-4" />
+              </button>
+              <SessionsDropdown
+                isOpen={isSessionsOpen}
+                onClose={() => setIsSessionsOpen(false)}
+                sessions={sessions}
+                activeSessionId={activeSessionId}
+                onNewSession={handleNewSession}
+                onSwitchSession={handleSwitchSession}
+                onDeleteSession={handleDeleteSession}
+                onRenameSession={handleRenameSession}
+              />
+            </div>
+
+            {/* Settings */}
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              title="Settings"
+              className="p-1.5 text-zinc-500 hover:text-zinc-200 transition-colors rounded-md hover:bg-zinc-800"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Team Bar */}
+      <TeamBar
+        isTyping={isTyping}
+        explicitAgentId={explicitAgentId}
+        lastActiveAgentName={lastActiveAgent}
       />
+
+      {/* Chat */}
       <ChatArea
         key={activeSessionId}
-        onMenuClick={() => setIsSidebarOpen(true)}
         onAgentResponse={handleAgentResponse}
         onConnectionChange={setConnectionStatus}
         connectionStatus={connectionStatus}
-        pendingInput={pendingInput}
-        onPendingInputConsumed={() => setPendingInput('')}
-        onMessageSent={() => setMessageCount(c => c + 1)}
+        onMessageSend={handleMessageSend}
+        onTypingChange={setIsTyping}
         sessionId={activeSessionId}
         storageKey={getMessageKey(activeSessionId)}
       />
@@ -192,7 +225,6 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => {
           setIsSettingsOpen(false);
-          // Re-probe immediately so the status badge reflects the new URL
           probeConnection();
         }}
       />

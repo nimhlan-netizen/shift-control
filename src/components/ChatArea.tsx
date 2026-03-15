@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, Bot, User, Loader2, Menu, X, Trash2, Copy, Check, Search } from 'lucide-react';
+import { Send, Paperclip, Bot, User, Loader2, Trash2, Copy, Check, Search, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format, formatDistanceToNowStrict, differenceInHours } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { AGENTS, getAgentByName, type Agent } from '../lib/agents';
 
 interface Message {
   id: string;
@@ -22,13 +23,13 @@ interface Attachment {
 }
 
 interface ChatAreaProps {
-  onMenuClick: () => void;
   onAgentResponse: (name: string) => void;
   onConnectionChange: (status: 'online' | 'offline') => void;
   connectionStatus: 'checking' | 'online' | 'offline';
-  pendingInput: string;
-  onPendingInputConsumed: () => void;
-  onMessageSent: () => void;
+  /** Called on every send with the raw message text (for @mention detection in App) */
+  onMessageSend: (text: string) => void;
+  /** Called when isTyping changes, so App can reflect it in TeamBar */
+  onTypingChange: (typing: boolean) => void;
   sessionId: string;
   storageKey: string;
 }
@@ -37,16 +38,16 @@ const INITIAL_MESSAGES: Message[] = [
   {
     id: '1',
     role: 'system',
-    content: 'Shift Control initialized. All agents online. OpenRouter connected.',
+    content: 'Session started.',
     timestamp: new Date(Date.now() - 60000),
   },
   {
     id: '2',
     role: 'assistant',
-    content: 'Good morning. I am ready to route your commands to the Shopify, Social Media, or Media Ingest agents. What would you like to do?',
+    content: "Hi! I'm ready to help. Just tell me what you'd like to do, or type @ to address a specific member of your team.",
     timestamp: new Date(Date.now() - 30000),
     agent: 'Orchestrator',
-  }
+  },
 ];
 
 function loadMessages(storageKey: string): Message[] {
@@ -61,13 +62,11 @@ function loadMessages(storageKey: string): Message[] {
 }
 
 export function ChatArea({
-  onMenuClick,
   onAgentResponse,
   onConnectionChange,
   connectionStatus,
-  pendingInput,
-  onPendingInputConsumed,
-  onMessageSent,
+  onMessageSend,
+  onTypingChange,
   sessionId,
   storageKey,
 }: ChatAreaProps) {
@@ -77,11 +76,12 @@ export function ChatArea({
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [, setTick] = useState(0);
-  const [pendingAgentName, setPendingAgentName] = useState('Orchestrator');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [errorToast, setErrorToast] = useState<{ message: string; retryPayload: { text: string; att: Attachment | null } } | null>(null);
+  const [mentionPopupOpen, setMentionPopupOpen] = useState(false);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -151,15 +151,6 @@ export function ChatArea({
     el.style.height = `${el.scrollHeight}px`;
   }, [input]);
 
-  // Sync pendingInput from App into textarea
-  useEffect(() => {
-    if (pendingInput) {
-      setInput(pendingInput);
-      onPendingInputConsumed();
-      textareaRef.current?.focus();
-    }
-  }, [pendingInput, onPendingInputConsumed]);
-
   const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -191,7 +182,7 @@ export function ChatArea({
   };
 
   const sendMessage = async (userText: string, currentAttachment: Attachment | null) => {
-    setIsTyping(true);
+    setIsTyping(true); onTypingChange(true);
 
     // Prioritize local storage settings, then environment variable, fallback to localhost
     const storedWebhookUrl = localStorage.getItem('N8N_WEBHOOK_URL');
@@ -266,7 +257,6 @@ export function ChatArea({
           }
         }
 
-        setPendingAgentName(agentName);
         onAgentResponse(agentName);
         onConnectionChange('online');
       } else {
@@ -282,7 +272,6 @@ export function ChatArea({
           agent: agentName,
         }]);
 
-        setPendingAgentName(agentName);
         onAgentResponse(agentName);
         onConnectionChange('online');
       }
@@ -294,7 +283,7 @@ export function ChatArea({
       );
       onConnectionChange('offline');
     } finally {
-      setIsTyping(false);
+      setIsTyping(false); onTypingChange(false);
       setAttachment(null);
     }
   };
@@ -306,11 +295,8 @@ export function ChatArea({
     const userText = input.trim();
     const currentAttachment = attachment;
 
-    // Guess agent from input prefix for the header indicator
-    if (userText.startsWith('Shopify:')) setPendingAgentName('Shopify Manager');
-    else if (userText.startsWith('Social:')) setPendingAgentName('Social Publisher');
-    else if (userText.startsWith('Media:')) setPendingAgentName('Media Ingest');
-    else setPendingAgentName('Orchestrator');
+    // Notify App of the send (for @mention detection → TeamBar explicitAgentId)
+    onMessageSend(userText);
 
     setMessages(prev => [...prev, {
       id: Date.now().toString(),
@@ -326,7 +312,7 @@ export function ChatArea({
       }),
     }]);
     setInput('');
-    onMessageSent();
+    setMentionPopupOpen(false);
     await sendMessage(userText, currentAttachment);
   };
 
@@ -367,27 +353,28 @@ export function ChatArea({
     await sendMessage(text, att);
   };
 
+  const insertMention = (agent: Agent) => {
+    // Replace trailing @partial with @slug + space
+    const updated = input.replace(/@(\w*)$/, `@${agent.id} `);
+    setInput(updated);
+    setMentionPopupOpen(false);
+    textareaRef.current?.focus();
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full bg-transparent relative w-full overflow-hidden">
       {/* Header */}
       <header className="glass-panel border-b border-white/5 z-10 shrink-0">
-        <div className="h-16 flex items-center px-4 md:px-6">
-          <button
-            onClick={onMenuClick}
-            className="md:hidden p-2 mr-3 -ml-2 text-zinc-400 hover:text-white rounded-md hover:bg-zinc-800 transition-colors"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
+        <div className="h-12 flex items-center px-4 md:px-6">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-medium text-zinc-200">Command Center</h2>
             {isTyping && (
-              <span className="flex items-center gap-1.5 text-xs font-mono text-emerald-400 animate-pulse">
+              <span className="flex items-center gap-1.5 text-xs font-mono text-zinc-500 animate-pulse">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                {pendingAgentName} thinking...
+                Working on it...
               </span>
             )}
           </div>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-2">
             <button
               onClick={() => {
                 setSearchOpen(o => {
@@ -398,8 +385,8 @@ export function ChatArea({
               }}
               title="Search messages (Ctrl+F)"
               className={cn(
-                "p-1.5 transition-colors rounded-md hover:bg-zinc-800",
-                searchOpen ? "text-emerald-400" : "text-zinc-600 hover:text-zinc-300"
+                'p-1.5 transition-colors rounded-md hover:bg-zinc-800',
+                searchOpen ? 'text-emerald-400' : 'text-zinc-600 hover:text-zinc-300'
               )}
             >
               <Search className="w-4 h-4" />
@@ -411,26 +398,9 @@ export function ChatArea({
             >
               <Trash2 className="w-4 h-4" />
             </button>
-          <span className={cn(
-            "flex h-2 w-2 rounded-full transition-colors",
-            connectionStatus === 'online' ? "bg-emerald-500" :
-            connectionStatus === 'offline' ? "bg-red-500" :
-            "bg-amber-500 animate-pulse"
-          )} />
-          <span className={cn(
-            "text-xs font-mono hidden sm:inline-block transition-colors",
-            connectionStatus === 'online' ? "text-zinc-400" :
-            connectionStatus === 'offline' ? "text-red-400" :
-            "text-amber-400"
-          )}>
-            {connectionStatus === 'online' ? 'N8N_CONNECTED' :
-             connectionStatus === 'offline' ? 'N8N_OFFLINE' :
-             'N8N_CHECKING'}
-          </span>
           </div>
         </div>
 
-        {/* Search bar */}
         {searchOpen && (
           <div className="px-4 md:px-6 pb-3 flex items-center gap-2">
             <div className="flex-1 flex items-center gap-2 glass-input rounded-lg px-3 py-1.5 border border-white/10 focus-within:border-emerald-500/40">
@@ -468,12 +438,37 @@ export function ChatArea({
             )}
           >
             {msg.role !== 'system' && (
-              <div className={cn(
-                "w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1 shadow-lg",
-                msg.role === 'user' ? "bg-gradient-to-tr from-zinc-800 to-zinc-700 text-zinc-300 border border-white/10" : "bg-gradient-to-tr from-emerald-500/20 to-emerald-400/10 border border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
-              )}>
-                {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-              </div>
+              (() => {
+                if (msg.role === 'user') {
+                  return (
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1 shadow-lg bg-gradient-to-tr from-zinc-800 to-zinc-700 text-zinc-300 border border-white/10">
+                      <User className="w-4 h-4" />
+                    </div>
+                  );
+                }
+                const agentConfig = msg.agent ? getAgentByName(msg.agent) : undefined;
+                if (agentConfig) {
+                  return (
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1 text-xs font-bold"
+                      style={{
+                        backgroundColor: agentConfig.bgColor,
+                        border: `1px solid ${agentConfig.borderColor}`,
+                        color: agentConfig.color,
+                        boxShadow: `0 0 12px ${agentConfig.color}30`,
+                      }}
+                    >
+                      {agentConfig.initial}
+                    </div>
+                  );
+                }
+                // Fallback: Orchestrator or unknown agent
+                return (
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1 shadow-lg bg-zinc-800/60 border border-white/10 text-zinc-400">
+                    <Bot className="w-4 h-4" />
+                  </div>
+                );
+              })()
             )}
 
             <div className={cn(
@@ -483,7 +478,14 @@ export function ChatArea({
             )}>
               {msg.role !== 'system' && (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-zinc-400">
+                  <span
+                    className="text-xs font-medium"
+                    style={{
+                      color: msg.role === 'user'
+                        ? '#a1a1aa'
+                        : (msg.agent ? (getAgentByName(msg.agent)?.color ?? '#a1a1aa') : '#a1a1aa')
+                    }}
+                  >
                     {msg.role === 'user' ? 'You' : msg.agent}
                   </span>
                   <span className="text-[10px] font-mono text-zinc-600" title={format(msg.timestamp, 'HH:mm:ss dd/MM/yyyy')}>
@@ -592,14 +594,14 @@ export function ChatArea({
 
         {isTyping && (
           <div className="flex gap-3 md:gap-4 max-w-3xl">
-            <div className="w-8 h-8 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 flex items-center justify-center shrink-0 mt-1">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1 bg-zinc-800/60 border border-white/10 text-zinc-500">
               <Bot className="w-4 h-4" />
             </div>
             <div className="flex flex-col gap-1 items-start">
-              <span className="text-xs font-medium text-zinc-400">System</span>
-              <div className="text-sm bg-[#18181b] border border-[#27272a] px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
-                <span className="text-zinc-400">Processing...</span>
+              <span className="text-xs font-medium text-zinc-500">Your team</span>
+              <div className="text-sm glass-panel border border-white/5 px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
+                <span className="text-zinc-500">Working on it...</span>
               </div>
             </div>
           </div>
@@ -631,6 +633,37 @@ export function ChatArea({
           )}
 
           <div className="relative flex items-end gap-2 glass-input rounded-2xl p-2 focus-within:border-emerald-500/50 focus-within:shadow-[0_0_20px_rgba(16,185,129,0.15)] transition-all duration-300">
+            {/* @mention autocomplete popup */}
+            {mentionPopupOpen && (
+              <div className="absolute bottom-full left-0 mb-2 w-56 glass-panel border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50">
+                {AGENTS.map((agent, i) => (
+                  <button
+                    key={agent.id}
+                    type="button"
+                    onClick={() => insertMention(agent)}
+                    className={cn(
+                      'w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors',
+                      i === mentionIndex ? 'bg-white/10' : 'hover:bg-white/5'
+                    )}
+                  >
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                      style={{
+                        backgroundColor: agent.bgColor,
+                        border: `1px solid ${agent.borderColor}`,
+                        color: agent.color,
+                      }}
+                    >
+                      {agent.initial}
+                    </div>
+                    <div>
+                      <div className="text-xs text-zinc-200">{agent.name}</div>
+                      <div className="text-[10px] font-mono text-zinc-500">@{agent.id}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
             <input
               type="file"
               accept="image/*,video/*,.pdf"
@@ -649,14 +682,31 @@ export function ChatArea({
             <textarea
               ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setInput(val);
+                // Show mention popup when text ends with @ or @partial word
+                const atMatch = val.match(/@(\w*)$/);
+                if (atMatch) {
+                  setMentionPopupOpen(true);
+                  setMentionIndex(0);
+                } else {
+                  setMentionPopupOpen(false);
+                }
+              }}
               onKeyDown={(e) => {
+                if (mentionPopupOpen) {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => Math.min(i + 1, AGENTS.length - 1)); return; }
+                  if (e.key === 'ArrowUp')   { e.preventDefault(); setMentionIndex(i => Math.max(i - 1, 0)); return; }
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); insertMention(AGENTS[mentionIndex]); return; }
+                  if (e.key === 'Escape') { setMentionPopupOpen(false); return; }
+                }
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSend(e);
                 }
               }}
-              placeholder="Command Shift Control..."
+              placeholder="What would you like to do? Type @ to address a specific agent..."
               className="w-full max-h-48 min-h-[44px] bg-transparent text-zinc-100 placeholder:text-zinc-600 resize-none focus:outline-none py-3 text-sm overflow-y-auto"
             />
 
