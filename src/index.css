@@ -4,19 +4,17 @@
 @theme {
   --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  
-  --color-bg: #030303;
-  --color-panel: rgba(24, 24, 27, 0.6);
-  --color-border: rgba(255, 255, 255, 0.06);
-  --color-accent: #10b981; /* Emerald */
-  --color-text-primary: #fafafa;
-  --color-text-secondary: #a1a1aa;
+
+  --color-bg: #0d1117;
+  --color-panel: rgba(22, 27, 34, 0.9);
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-accent: #10b981;
+  --color-text-primary: #e6edf3;
+  --color-text-secondary: #8b949e;
 }
 
 body {
   background-color: var(--color-bg);
-  background-image: radial-gradient(circle at 15% 50%, rgba(16, 185, 129, 0.04), transparent 25%),
-                    radial-gradient(circle at 85% 30%, rgba(99, 102, 241, 0.03), transparent 25%);
   color: var(--color-text-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -39,17 +37,17 @@ body {
 
 /* Glassmorphism utilities */
 .glass-panel {
-  background: rgba(15, 15, 18, 0.6);
+  background: rgba(22, 27, 34, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .glass-input {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* Hide scrollbar while preserving scroll behavior */

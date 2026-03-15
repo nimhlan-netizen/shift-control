@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { Settings, History, TerminalSquare } from 'lucide-react';
+import { cn } from './lib/utils';
 import { TeamBar } from './components/TeamBar';
 import { ChatArea } from './components/ChatArea';
 import { SessionsDropdown } from './components/SessionsDropdown';
@@ -125,51 +126,42 @@ export default function App() {
   if (!activeSessionId) return null;
 
   return (
-    <div className="flex flex-col h-screen w-full bg-[#030303] text-zinc-100 overflow-hidden font-sans relative">
-      {/* Ambient Background Orbs */}
-      <div className="absolute top-[-15%] left-[-10%] w-[50%] h-[50%] rounded-full bg-emerald-500/10 blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-500/5 blur-[100px] pointer-events-none" />
-
-      {/* Header */}
-      <header className="glass-panel border-b border-white/5 z-10 shrink-0">
-        <div className="h-14 flex items-center px-4 md:px-6 gap-3">
-          {/* Wordmark */}
+    <div className="flex flex-col h-screen w-screen bg-[#0d1117] text-zinc-100 overflow-hidden font-sans">
+      {/* Header — full width */}
+      <header className="shrink-0 border-b border-white/[0.06] bg-[#0a0e14]">
+        <div className="h-12 flex items-center px-5 gap-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-md bg-gradient-to-tr from-emerald-500/20 to-emerald-400/5 flex items-center justify-center border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.15)]">
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
               <TerminalSquare className="w-4 h-4 text-emerald-400" />
             </div>
-            <span className="font-mono font-bold text-sm tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-100 to-zinc-400 select-none">
-              SHIFT CONTROL
+            <span className="font-mono font-semibold text-sm text-zinc-100 select-none tracking-wide">
+              Shift Control
             </span>
           </div>
 
-          <div className="ml-auto flex items-center gap-3">
-            {/* Connection status */}
-            <div className="hidden sm:flex items-center gap-1.5">
-              <span className={[
-                'w-1.5 h-1.5 rounded-full',
-                connectionStatus === 'online'  ? 'bg-emerald-500' :
-                connectionStatus === 'offline' ? 'bg-red-500' :
-                'bg-amber-500 animate-pulse'
-              ].join(' ')} />
-              <span className={[
-                'text-xs font-mono',
-                connectionStatus === 'online'  ? 'text-zinc-500' :
-                connectionStatus === 'offline' ? 'text-red-400' :
-                'text-amber-400'
-              ].join(' ')}>
-                {connectionStatus === 'online'  ? 'Connected' :
-                 connectionStatus === 'offline' ? 'Offline' :
-                 'Connecting...'}
+          <div className="ml-auto flex items-center gap-2">
+            {/* Connection pill */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.06]">
+              <span className={cn('w-1.5 h-1.5 rounded-full transition-colors', {
+                'bg-emerald-500': connectionStatus === 'online',
+                'bg-red-500': connectionStatus === 'offline',
+                'bg-amber-500 animate-pulse': connectionStatus === 'checking',
+              })} />
+              <span className={cn('text-[11px] font-mono', {
+                'text-zinc-400': connectionStatus === 'online',
+                'text-red-400': connectionStatus === 'offline',
+                'text-amber-400': connectionStatus === 'checking',
+              })}>
+                {connectionStatus === 'online' ? 'Connected' : connectionStatus === 'offline' ? 'Offline' : 'Connecting'}
               </span>
             </div>
 
-            {/* Sessions dropdown */}
+            {/* Sessions */}
             <div className="relative">
               <button
                 onClick={() => setIsSessionsOpen(o => !o)}
                 title="Sessions"
-                className="p-1.5 text-zinc-500 hover:text-zinc-200 transition-colors rounded-md hover:bg-zinc-800"
+                className="p-1.5 text-zinc-500 hover:text-zinc-200 transition-colors rounded-md hover:bg-white/5"
               >
                 <History className="w-4 h-4" />
               </button>
@@ -189,7 +181,7 @@ export default function App() {
             <button
               onClick={() => setIsSettingsOpen(true)}
               title="Settings"
-              className="p-1.5 text-zinc-500 hover:text-zinc-200 transition-colors rounded-md hover:bg-zinc-800"
+              className="p-1.5 text-zinc-500 hover:text-zinc-200 transition-colors rounded-md hover:bg-white/5"
             >
               <Settings className="w-4 h-4" />
             </button>
@@ -197,24 +189,25 @@ export default function App() {
         </div>
       </header>
 
-      {/* Team Bar */}
-      <TeamBar
-        isTyping={isTyping}
-        explicitAgentId={explicitAgentId}
-        lastActiveAgentName={lastActiveAgent}
-      />
+      {/* Body: chat left, agent panel right */}
+      <div className="flex flex-1 min-h-0">
+        <ChatArea
+          key={activeSessionId}
+          onAgentResponse={handleAgentResponse}
+          onConnectionChange={setConnectionStatus}
+          connectionStatus={connectionStatus}
+          onMessageSend={handleMessageSend}
+          onTypingChange={setIsTyping}
+          sessionId={activeSessionId}
+          storageKey={getMessageKey(activeSessionId)}
+        />
 
-      {/* Chat */}
-      <ChatArea
-        key={activeSessionId}
-        onAgentResponse={handleAgentResponse}
-        onConnectionChange={setConnectionStatus}
-        connectionStatus={connectionStatus}
-        onMessageSend={handleMessageSend}
-        onTypingChange={setIsTyping}
-        sessionId={activeSessionId}
-        storageKey={getMessageKey(activeSessionId)}
-      />
+        <TeamBar
+          isTyping={isTyping}
+          explicitAgentId={explicitAgentId}
+          lastActiveAgentName={lastActiveAgent}
+        />
+      </div>
 
       <SettingsModal
         isOpen={isSettingsOpen}

@@ -363,19 +363,20 @@ export function ChatArea({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-transparent relative w-full overflow-hidden">
+    <div className="flex-1 flex flex-col min-h-0 bg-[#0d1117] relative overflow-hidden">
       {/* Header */}
-      <header className="glass-panel border-b border-white/5 z-10 shrink-0">
-        <div className="h-12 flex items-center px-4 md:px-6">
+      <header className="border-b border-white/[0.06] shrink-0 bg-[#0d1117]">
+        <div className="h-12 flex items-center px-5">
           <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-zinc-200">Team</span>
             {isTyping && (
-              <span className="flex items-center gap-1.5 text-xs font-mono text-zinc-500 animate-pulse">
+              <span className="flex items-center gap-1 text-[11px] font-mono text-zinc-500 animate-pulse">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 Working on it...
               </span>
             )}
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1">
             <button
               onClick={() => {
                 setSearchOpen(o => {
@@ -384,18 +385,18 @@ export function ChatArea({
                   return !o;
                 });
               }}
-              title="Search messages (Ctrl+F)"
+              title="Search messages"
               className={cn(
-                'p-1.5 transition-colors rounded-md hover:bg-zinc-800',
-                searchOpen ? 'text-emerald-400' : 'text-zinc-600 hover:text-zinc-300'
+                'p-1.5 transition-colors rounded-md',
+                searchOpen ? 'text-emerald-400' : 'text-zinc-600 hover:text-zinc-300 hover:bg-white/5'
               )}
             >
               <Search className="w-4 h-4" />
             </button>
             <button
               onClick={handleClearHistory}
-              title="Clear conversation history"
-              className="p-1.5 text-zinc-600 hover:text-zinc-300 transition-colors rounded-md hover:bg-zinc-800"
+              title="Clear conversation"
+              className="p-1.5 text-zinc-600 hover:text-zinc-300 transition-colors rounded-md hover:bg-white/5"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -658,8 +659,8 @@ export function ChatArea({
                       {agent.initial}
                     </div>
                     <div>
-                      <div className="text-xs text-zinc-200">{agent.name}</div>
-                      <div className="text-[10px] font-mono text-zinc-500">@{agent.id}</div>
+                      <div className="text-xs text-zinc-200">{agent.displayName}</div>
+                      <div className="text-[10px] font-mono text-zinc-500">@{agent.id} · {agent.role}</div>
                     </div>
                   </button>
                 ))}
@@ -720,24 +721,6 @@ export function ChatArea({
             </button>
           </div>
         </form>
-        <div className="items-center justify-center gap-4 mt-2 hidden sm:flex">
-          <span className="text-[10px] font-mono text-zinc-700">
-            <kbd className="px-1 py-0.5 rounded bg-zinc-800/60 border border-zinc-700 text-zinc-500">Enter</kbd>
-            {' '}send
-          </span>
-          <span className="text-[10px] font-mono text-zinc-700">
-            <kbd className="px-1 py-0.5 rounded bg-zinc-800/60 border border-zinc-700 text-zinc-500">Shift+Enter</kbd>
-            {' '}newline
-          </span>
-          <span className="text-[10px] font-mono text-zinc-700">
-            <kbd className="px-1 py-0.5 rounded bg-zinc-800/60 border border-zinc-700 text-zinc-500">Ctrl+F</kbd>
-            {' '}search
-          </span>
-          <span className="text-[10px] font-mono text-zinc-700">
-            <kbd className="px-1 py-0.5 rounded bg-zinc-800/60 border border-zinc-700 text-zinc-500">Ctrl+K</kbd>
-            {' '}clear
-          </span>
-        </div>
       </div>
 
       {/* Error Toast */}

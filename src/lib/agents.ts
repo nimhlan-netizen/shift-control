@@ -1,9 +1,11 @@
 export interface Agent {
-  id: string;         // slug used in @mentions: 'shopify', 'social', 'media'
-  name: string;       // display name: 'Shopify Manager'
-  initial: string;    // avatar letter: 'S'
-  color: string;      // primary hex: '#10b981'
-  bgColor: string;    // translucent bg for chips/bubbles
+  id: string;          // slug used in @mentions: 'shopify', 'social', 'media'
+  name: string;        // n8n response name — used for matching agent responses
+  displayName: string; // shown in UI
+  role: string;        // short role label shown under display name
+  initial: string;     // avatar letter
+  color: string;       // primary hex: '#10b981'
+  bgColor: string;     // translucent bg for chips/bubbles
   borderColor: string;
 }
 
@@ -19,7 +21,9 @@ export const AGENTS: Agent[] = [
   {
     id: 'shopify',
     name: 'Shopify Manager',
-    initial: 'S',
+    displayName: 'Forge',
+    role: 'Store & Products',
+    initial: 'F',
     color: '#10b981',
     bgColor: 'rgba(16,185,129,0.12)',
     borderColor: 'rgba(16,185,129,0.25)',
@@ -27,7 +31,9 @@ export const AGENTS: Agent[] = [
   {
     id: 'social',
     name: 'Social Publisher',
-    initial: 'S',
+    displayName: 'Echo',
+    role: 'Social Media',
+    initial: 'E',
     color: '#818cf8',
     bgColor: 'rgba(129,140,248,0.12)',
     borderColor: 'rgba(129,140,248,0.25)',
@@ -35,7 +41,9 @@ export const AGENTS: Agent[] = [
   {
     id: 'media',
     name: 'Media Ingest',
-    initial: 'M',
+    displayName: 'Lens',
+    role: 'Media & Assets',
+    initial: 'L',
     color: '#f59e0b',
     bgColor: 'rgba(245,158,11,0.12)',
     borderColor: 'rgba(245,158,11,0.25)',

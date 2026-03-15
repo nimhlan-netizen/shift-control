@@ -3,11 +3,8 @@ import { cn } from '../lib/utils';
 import { AGENTS, type Agent } from '../lib/agents';
 
 interface TeamBarProps {
-  /** true while a fetch is in flight */
   isTyping: boolean;
-  /** agent id from @mention parsing — known before response arrives */
   explicitAgentId: string | null;
-  /** agent name from the response `agent` field — set for 4s after response */
   lastActiveAgentName: string | null;
 }
 
@@ -15,31 +12,31 @@ export function TeamBar({ isTyping, explicitAgentId, lastActiveAgentName }: Team
   const isGenericWorking = isTyping && !explicitAgentId;
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 border-b border-white/5 bg-black/10 overflow-x-auto shrink-0 scrollbar-none">
-      <span className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest shrink-0 mr-1 select-none">
-        Team
-      </span>
+    <aside className="w-56 shrink-0 border-l border-white/[0.06] flex flex-col overflow-hidden bg-[#0a0e14]">
+      <div className="px-4 py-3.5 border-b border-white/[0.06]">
+        <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">Your Team</p>
+      </div>
 
-      {AGENTS.map(agent => {
-        // Show this chip as "Working" only when we know the specific agent via @mention
-        const isWorking = isTyping && explicitAgentId === agent.id;
-        const justResponded = lastActiveAgentName === agent.name;
-
-        return (
-          <AgentChip
-            key={agent.id}
-            agent={agent}
-            isWorking={isWorking}
-            justResponded={justResponded}
-            isGenericWorking={isGenericWorking}
-          />
-        );
-      })}
-    </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        {AGENTS.map(agent => {
+          const isWorking = isTyping && explicitAgentId === agent.id;
+          const justResponded = lastActiveAgentName === agent.name;
+          return (
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              isWorking={isWorking}
+              justResponded={justResponded}
+              isGenericWorking={isGenericWorking}
+            />
+          );
+        })}
+      </div>
+    </aside>
   );
 }
 
-function AgentChip({
+function AgentCard({
   agent,
   isWorking,
   justResponded,
@@ -51,40 +48,60 @@ function AgentChip({
   isGenericWorking: boolean;
 }) {
   const active = isWorking || justResponded;
+  const pulsing = isWorking || isGenericWorking;
 
   return (
     <div
       className={cn(
-        'flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all duration-300 shrink-0 select-none',
-        active ? 'opacity-100' : 'opacity-50 hover:opacity-70'
+        'rounded-xl p-3 border transition-all duration-300',
+        active
+          ? 'border-opacity-100'
+          : 'border-white/[0.06] hover:border-white/10'
       )}
       style={{
-        backgroundColor: active ? agent.bgColor : 'transparent',
-        borderColor: active ? agent.borderColor : 'rgba(255,255,255,0.06)',
+        backgroundColor: active ? agent.bgColor : 'rgba(255,255,255,0.02)',
+        borderColor: active ? agent.borderColor : undefined,
       }}
     >
-      {/* Avatar */}
-      <div
-        className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
-        style={{
-          backgroundColor: agent.bgColor,
-          border: `1px solid ${agent.borderColor}`,
-          color: agent.color,
-        }}
-      >
-        {agent.initial}
+      <div className="flex items-center gap-2.5">
+        {/* Avatar */}
+        <div
+          className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+          style={{
+            backgroundColor: agent.bgColor,
+            border: `1.5px solid ${agent.borderColor}`,
+            color: agent.color,
+            boxShadow: active ? `0 0 14px ${agent.color}30` : 'none',
+          }}
+        >
+          {agent.initial}
+        </div>
+
+        {/* Name + role */}
+        <div className="flex-1 min-w-0">
+          <p
+            className="text-sm font-semibold leading-tight truncate"
+            style={{ color: active ? agent.color : '#d4d4d8' }}
+          >
+            {agent.displayName}
+          </p>
+          <p className="text-[11px] text-zinc-600 leading-tight mt-0.5 truncate">{agent.role}</p>
+        </div>
+
+        {/* Status dot */}
+        <span
+          className={cn('w-2 h-2 rounded-full shrink-0', pulsing && 'animate-pulse')}
+          style={{
+            backgroundColor: isWorking
+              ? agent.color
+              : justResponded
+              ? agent.color
+              : isGenericWorking
+              ? '#4b5563'
+              : '#2d3139',
+          }}
+        />
       </div>
-
-      {/* Name */}
-      <span className="text-xs text-zinc-300 whitespace-nowrap leading-none">
-        {agent.name}
-      </span>
-
-      {/* Status dot */}
-      <span
-        className={cn('w-1.5 h-1.5 rounded-full shrink-0 transition-colors', (isWorking || isGenericWorking) && 'animate-pulse')}
-        style={{ backgroundColor: isWorking || justResponded ? agent.color : isGenericWorking ? '#6b7280' : '#374151' }}
-      />
     </div>
   );
 }
