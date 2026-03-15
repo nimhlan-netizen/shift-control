@@ -12,6 +12,8 @@ interface TeamBarProps {
 }
 
 export function TeamBar({ isTyping, explicitAgentId, lastActiveAgentName }: TeamBarProps) {
+  const isGenericWorking = isTyping && !explicitAgentId;
+
   return (
     <div className="flex items-center gap-2 px-4 py-2 border-b border-white/5 bg-black/10 overflow-x-auto shrink-0 scrollbar-none">
       <span className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest shrink-0 mr-1 select-none">
@@ -29,6 +31,7 @@ export function TeamBar({ isTyping, explicitAgentId, lastActiveAgentName }: Team
             agent={agent}
             isWorking={isWorking}
             justResponded={justResponded}
+            isGenericWorking={isGenericWorking}
           />
         );
       })}
@@ -40,10 +43,12 @@ function AgentChip({
   agent,
   isWorking,
   justResponded,
+  isGenericWorking,
 }: {
   agent: Agent;
   isWorking: boolean;
   justResponded: boolean;
+  isGenericWorking: boolean;
 }) {
   const active = isWorking || justResponded;
 
@@ -77,8 +82,8 @@ function AgentChip({
 
       {/* Status dot */}
       <span
-        className={cn('w-1.5 h-1.5 rounded-full shrink-0 transition-colors', isWorking && 'animate-pulse')}
-        style={{ backgroundColor: isWorking || justResponded ? agent.color : '#374151' }}
+        className={cn('w-1.5 h-1.5 rounded-full shrink-0 transition-colors', (isWorking || isGenericWorking) && 'animate-pulse')}
+        style={{ backgroundColor: isWorking || justResponded ? agent.color : isGenericWorking ? '#6b7280' : '#374151' }}
       />
     </div>
   );

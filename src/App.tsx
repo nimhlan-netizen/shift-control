@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Settings, History, TerminalSquare } from 'lucide-react';
 import { TeamBar } from './components/TeamBar';
 import { ChatArea } from './components/ChatArea';
@@ -36,11 +36,6 @@ export default function App() {
     setSessions(s);
     setActiveSessionId(activeId);
   }, []);
-
-  const sessionIdRef = useRef('');
-  useEffect(() => {
-    sessionIdRef.current = activeSessionId;
-  }, [activeSessionId]);
 
   const probeConnection = useCallback(async () => {
     // @ts-ignore

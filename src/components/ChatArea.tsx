@@ -218,7 +218,7 @@ export function ChatArea({
           timestamp: new Date(),
           agent: agentName,
         }]);
-        setIsTyping(false);
+        setIsTyping(false); onTypingChange(false);
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -350,6 +350,7 @@ export function ChatArea({
     if (!errorToast) return;
     const { text, att } = errorToast.retryPayload;
     dismissToast();
+    onMessageSend(text);
     await sendMessage(text, att);
   };
 
@@ -529,7 +530,7 @@ export function ChatArea({
                 "text-sm leading-relaxed break-words w-full shadow-sm transition-all hover:shadow-md",
                 msg.role === 'user' ? "bg-gradient-to-tr from-zinc-800 to-zinc-700/80 text-zinc-100 px-4 py-3 rounded-2xl rounded-tr-sm border border-white/5" :
                 msg.role === 'system' ? "text-xs font-mono text-zinc-500 glass-panel px-3 py-1.5 rounded-full border border-white/5 inline-block" :
-                "text-zinc-200 glass-panel px-4 py-3 rounded-2xl rounded-tl-sm border-white/5"
+                "text-zinc-200 glass-panel px-4 py-3 rounded-2xl rounded-tl-sm border border-white/5"
               )}>
                 {msg.role === 'assistant' ? (
                   <ReactMarkdown
@@ -719,7 +720,7 @@ export function ChatArea({
             </button>
           </div>
         </form>
-        <div className="flex items-center justify-center gap-4 mt-2 hidden sm:flex">
+        <div className="items-center justify-center gap-4 mt-2 hidden sm:flex">
           <span className="text-[10px] font-mono text-zinc-700">
             <kbd className="px-1 py-0.5 rounded bg-zinc-800/60 border border-zinc-700 text-zinc-500">Enter</kbd>
             {' '}send

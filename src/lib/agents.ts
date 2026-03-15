@@ -27,7 +27,7 @@ export const AGENTS: Agent[] = [
   {
     id: 'social',
     name: 'Social Publisher',
-    initial: 'P',
+    initial: 'S',
     color: '#818cf8',
     bgColor: 'rgba(129,140,248,0.12)',
     borderColor: 'rgba(129,140,248,0.25)',
