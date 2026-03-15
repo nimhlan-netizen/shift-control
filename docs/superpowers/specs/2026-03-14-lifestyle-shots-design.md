@@ -55,22 +55,23 @@ Add to the `Route by Intent` Switch node: output index 4 → `Format Lifestyle S
 }
 ```
 
-### 4. Async Trigger (HTTP Request node)
+### 4. Async Trigger (Execute Workflow node)
 
-After `Format Lifestyle Shots Response`, an HTTP Request node fires a POST to:
-```
-POST {{ $env.N8N_LIFESTYLE_WEBHOOK_URL || 'http://localhost:5678/webhook/lifestyle-shots' }}
-```
+After `Format Lifestyle Shots Response`, an `Execute Workflow` node triggers the lifestyle shots workflow:
 
-Body:
+- **Node type:** `n8n-nodes-base.executeWorkflow`
+- **Wait for sub-workflow:** `false` (fire-and-forget — orchestrator does not block on completion)
+- **Workflow:** reference to `5-lifestyle-shots-agent` by ID
+
+Pass-through data:
 ```json
 {
-  "message": "{{ $('Chat Webhook').item.json.body.message }}",
-  "sessionId": "{{ $('Chat Webhook').item.json.body.sessionId }}"
+  "message": "={{ $('Chat Webhook').item.json.body.message }}",
+  "sessionId": "={{ $('Chat Webhook').item.json.body.sessionId }}"
 }
 ```
 
-This node is **not** in the response chain — the orchestrator returns the acknowledgement immediately without waiting for it to complete.
+Setting `waitForSubWorkflow: false` is what makes this non-blocking. The orchestrator's response chain returns the acknowledgement from `Format Lifestyle Shots Response` immediately; the sub-workflow executes independently in n8n's queue.
 
 ---
 
@@ -78,9 +79,9 @@ This node is **not** in the response chain — the orchestrator returns the ackn
 
 ### Node Chain
 
-#### 1. Chat Webhook
-- `POST /webhook/lifestyle-shots`
-- `responseMode: immediatelyReturns` (fire-and-forget, no response needed)
+#### 1. Execute Workflow Trigger
+- Triggered by the orchestrator's `Execute Workflow` node (not a webhook)
+- Node type: `n8n-nodes-base.executeWorkflowTrigger`
 - Receives: `{ message, sessionId }`
 
 #### 2. Parse Command (Code node)
@@ -91,15 +92,25 @@ const n = match ? parseInt(match[1], 10) : 3;
 return { json: { n } };
 ```
 
-#### 3. Fetch All Products (HTTP Request)
+#### 3. Fetch All Products (HTTP Request + pagination loop)
+
+**3a. Fetch Page** (HTTP Request node):
 ```
 GET https://<store>.myshopify.com/admin/api/2024-01/products.json
   ?fields=id,title,images
   &limit=250
+  &page_info={{ $json.nextPageInfo || '' }}
 ```
-Auth: Shopify Access Token (existing credential).
+Auth: Shopify Access Token.
 
-Pagination: If the response `Link` header contains `rel="next"`, a loop node fetches the next page and merges results until all products are loaded.
+**3b. Has Next Page?** (IF node):
+Condition: `{{ $response.headers['link']?.includes('rel="next"') }}`
+- **True** → extract `page_info` token from the `Link` header using a Code node, loop back to 3a
+- **False** → proceed with all collected products
+
+**3c. Merge Pages** (Merge node, `mergeByIndex` mode): Combines all product arrays from each page fetch into a single list before passing to the Split In Batches node.
+
+This three-node pattern (Fetch → Check → Merge) repeats until the `Link` header has no `rel="next"` cursor.
 
 #### 4. Split In Batches
 Processes one product at a time to respect Shopify and fal.ai API rate limits.
@@ -127,8 +138,23 @@ Condition: `{{ $json.images.length > 0 }}`
 ```
 Returns a plain-text prompt, e.g.: `"person wearing the jacket outdoors in autumn forest, natural light, editorial fashion photography, clean background"`
 
-#### 7. Generate Shots Loop (Split In Batches × N + HTTP Request → fal.ai)
-Creates N copies of the current product data, then for each:
+#### 7. Generate Shots Loop (Code node → Split In Batches → HTTP Request → fal.ai)
+
+**7a. Create N Items** (Code node): Returns an array of N identical items, each carrying the product ID, image URL, and generated prompt:
+```js
+const items = [];
+const n = $('Parse Command').first().json.n;
+const product = $input.item.json;
+const prompt = $('Generate Scene Prompt').item.json.choices[0].message.content;
+for (let i = 0; i < n; i++) {
+  items.push({ json: { productId: product.id, imageUrl: product.images[0].src, prompt, shotIndex: i } });
+}
+return items;
+```
+
+**7b. Split In Batches** (batchSize: 1): Iterates over the N items one at a time.
+
+**7c. HTTP Request → fal.ai FLUX Kontext**: For each item:
 
 ```
 POST https://fal.run/fal-ai/flux-pro/kontext
@@ -180,18 +206,25 @@ Variables:
 ```
 
 #### 9. Aggregate Results (Code node)
-Tracks running totals across all batches:
+Collects per-product results after all Split In Batches iterations complete. Uses a running tally via workflow static data, **reset at the start of each execution** (in Parse Command, step 2):
+
 ```js
+// In Parse Command (step 2), add reset:
 const stats = $getWorkflowStaticData('global');
-if (!stats.processed) { stats.processed = 0; stats.added = 0; stats.skipped = 0; }
+stats.processed = 0; stats.added = 0; stats.skipped = 0;
+
+// In Aggregate Results (step 9):
+const stats = $getWorkflowStaticData('global');
 if ($input.item.json.skipped) {
   stats.skipped++;
 } else {
   stats.processed++;
-  stats.added += n;
+  stats.added += $input.item.json.imagesAdded ?? 0;
 }
-return { json: { ...stats } };
+return { json: { processed: stats.processed, added: stats.added, skipped: stats.skipped } };
 ```
+
+Resetting in step 2 ensures concurrent or back-to-back runs start with clean counters.
 
 #### 10. Format Summary (Set node)
 After all batches complete:
@@ -201,7 +234,7 @@ After all batches complete:
 ```
 
 #### 11. No-op Respond
-The webhook was fire-and-forget (`immediatelyReturns`). The summary is logged in the n8n execution history. The chat UI already received the acknowledgement from the orchestrator.
+The workflow was triggered via `Execute Workflow` with `waitForSubWorkflow: false`. The summary is logged in the n8n execution history. The chat UI already received the acknowledgement from the orchestrator.
 
 ---
 
