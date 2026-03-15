@@ -49,7 +49,12 @@ export default function App() {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
-      await fetch(url, { method: 'HEAD', signal: controller.signal });
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({ ping: true }),
+      });
       setConnectionStatus('online');
     } catch {
       setConnectionStatus('offline');
